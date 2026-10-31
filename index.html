@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>猫咪 Rigify 姿态模式 · Three.js</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #232323; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 12px; color: #d1d1d1; }
+  #viewport { position: absolute; inset: 0; }
+  #panel {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 250px;
+    background: #2b2b2bee; border-right: 1px solid #1a1a1a;
+    display: flex; flex-direction: column; z-index: 10;
+    backdrop-filter: blur(4px);
+  }
+  #panel h1 {
+    font-size: 13px; padding: 10px 12px 8px; color: #e87d0d; font-weight: 600;
+    border-bottom: 1px solid #1a1a1a; letter-spacing: 0.5px;
+  }
+  #panel .section { padding: 8px 12px; border-bottom: 1px solid #1f1f1f; }
+  #panel .section h2 { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  #presets button, #tools button {
+    display: inline-block; margin: 2px 3px 2px 0; padding: 3px 8px;
+    background: #3d3d3d; color: #ccc; border: 1px solid #1a1a1a; border-radius: 3px;
+    cursor: pointer; font-size: 11px;
+  }
+  #presets button:hover, #tools button:hover { background: #4a4a4a; color: #fff; }
+  #presets button.active, #tools button.active { background: #e87d0d; color: #1a1a1a; border-color: #b35f00; }
+  #collections { overflow-y: auto; flex: 1; }
+  .coll-row { display: flex; align-items: center; padding: 2px 12px; cursor: pointer; border-radius: 2px; }
+  .coll-row:hover { background: #353535; }
+  .coll-row input { margin-right: 6px; accent-color: #e87d0d; }
+  .coll-row .name { flex: 1; }
+  .coll-row .count { color: #666; font-size: 10px; }
+  .slider-row { display: flex; align-items: center; margin: 4px 0; }
+  .slider-row label { width: 118px; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slider-row input[type=range] { flex: 1; accent-color: #4772b3; }
+  .slider-row .val { width: 34px; text-align: right; color: #7fa7d9; font-size: 10px; }
+  #hud {
+    position: absolute; top: 10px; right: 12px; z-index: 10;
+    background: #2b2b2bcc; padding: 6px 10px; border-radius: 4px;
+    font-size: 11px; color: #999; pointer-events: none; line-height: 1.6;
+  }
+  #hud b { color: #e87d0d; }
+  #hintbar {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 10;
+    background: #2b2b2bee; border-top: 1px solid #1a1a1a;
+    padding: 5px 12px; font-size: 11px; color: #888;
+  }
+  #hintbar b { color: #ccc; }
+  #loading {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #232323; z-index: 100; font-size: 14px; color: #e87d0d;
+    flex-direction: column; gap: 10px;
+  }
+  #loading .bar { width: 220px; height: 4px; background: #3a3a3a; border-radius: 2px; overflow: hidden; }
+  #loading .bar i { display: block; height: 100%; width: 30%; background: #e87d0d; border-radius: 2px; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+</style>
+</head>
+<body>
+<div id="viewport"></div>
+<div id="panel">
+  <h1>🐈 猫咪 Rigify · 姿态模式</h1>
+  <div class="section" id="presets-section">
+    <h2>姿态预设</h2>
+    <div id="presets"></div>
+  </div>
+  <div class="section">
+    <h2>IK / FK 滑杆</h2>
+    <div id="sliders"></div>
+  </div>
+  <div class="section" id="tools-section">
+    <h2>显示</h2>
+    <div id="tools"></div>
+  </div>
+  <div id="collections"></div>
+</div>
+<div id="hud"></div>
+<div id="hintbar">
+  <b>左键拖动</b> 移动控制器（G） · <b>Shift+左键拖动</b> 旋转（R） · <b>X/Y/Z</b> 拖动中按=轴向锁定 ·
+  <b>中键/右键拖动</b> 旋转视图 · <b>Shift+中键</b> 平移 · <b>滚轮</b> 缩放
+</div>
+<div id="loading"><div>加载猫咪绑定资源…</div><div class="bar"><i></i></div></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three-ik": "./vendor/three-ik.module.js",
+    "three/addons/": "./vendor/addons/"
+  }
+}
+</script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

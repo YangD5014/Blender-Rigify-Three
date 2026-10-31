@@ -1,0 +1,11 @@
+{
+  "name": "blender-rigify-three",
+  "version": "1.0.0",
+  "description": "Blender Rigify 绑定（猫咪）的 Three.js 姿态模式：约束引擎 + widget 拖拽交互",
+  "type": "module",
+  "scripts": {
+    "setup": "node tools/setup-node-shims.mjs",
+    "validate": "node tools/validate.mjs",
+    "start": "python3 -m http.server 8791"
+  }
+}
