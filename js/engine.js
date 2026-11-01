@@ -164,11 +164,37 @@ export class RigEngine {
     const tRec = this.bones.get(con.subtarget);
     if (!tRec) return B;
     const T = this.P.get(con.subtarget) || tRec.rest;
-    // 目标相对其 rest 的旋转差（世界系）
+    const curQ = new Quaternion();
+    B.decompose(_V1, curQ, _V2);
+
+    if (con.target_space === 'LOCAL' || con.owner_space === 'LOCAL') {
+      // LOCAL/LOCAL：通道级拷贝（GT 实证）——owner 通道旋转 := 目标通道旋转。
+      // 直接拷"basis 对 basis"的旋转，链式 whip（tail.00N ← tail.00N-1）每环拷到
+      // 相同的通道增量，不会像世界系拷贝那样逐环翻倍（tail_rot GT 已验证）。
+      const FT = tRec.parent
+        ? new Matrix4().multiplyMatrices(this.P.get(tRec.parent), tRec.restLocal)
+        : tRec.rest.clone();
+      const Rcopy = _rotOf(new Matrix4().copy(FT).invert().multiply(T));
+      // 轴过滤：euler XYZ 分解，未选轴保留 owner 当前通道分量
+      const euT = new Euler().setFromRotationMatrix(Rcopy, 'XYZ');
+      const euCur = new Euler().setFromQuaternion(curQ, 'XYZ');
+      const ex = con.use_x === false ? euCur.x : euT.x * (con.invert_x ? -1 : 1);
+      const ey = con.use_y === false ? euCur.y : euT.y * (con.invert_y ? -1 : 1);
+      const ez = con.use_z === false ? euCur.z : euT.z * (con.invert_z ? -1 : 1);
+      const qCopy = new Quaternion().setFromEuler(new Euler(ex, ey, ez, 'XYZ'));
+      let qMix;
+      if (con.mix_mode === 'BEFORE') qMix = qCopy.clone().multiply(curQ);
+      else if (con.mix_mode === 'AFTER') qMix = curQ.clone().multiply(qCopy);
+      else qMix = qCopy;
+      const out = B.clone();
+      _setRot(out, new Matrix4().makeRotationFromQuaternion(qMix));
+      return _blend(B, out, influence);
+    }
+
+    // WORLD/WORLD：目标相对其 rest 的旋转差（世界系）叠加到 owner rest 朝向
     const qT = new Quaternion().setFromRotationMatrix(_pureRot(T));
     const qTr = new Quaternion().setFromRotationMatrix(_pureRot(tRec.rest));
     const qDelta = qT.multiply(qTr.invert());
-    // 轴过滤：在 owner rest 系做 euler 分解（XYZ），再转回世界系
     const qO = new Quaternion().setFromRotationMatrix(_pureRot(rec.rest));
     const qLocal = qO.clone().invert().multiply(qDelta).multiply(qO);
     const eu = new Euler().setFromQuaternion(qLocal, 'XYZ');
@@ -176,12 +202,8 @@ export class RigEngine {
     const ey = con.use_y === false ? 0 : eu.y * (con.invert_y ? -1 : 1);
     const ez = con.use_z === false ? 0 : eu.z * (con.invert_z ? -1 : 1);
     const qDeltaF = qO.clone().multiply(new Quaternion().setFromEuler(new Euler(ex, ey, ez, 'XYZ'))).multiply(qO.clone().invert());
-    // REPLACE：世界旋转 = qDelta @ owner rest 朝向（锚定 rest，锚点在 basis 空间 = qO⁻¹ @ qDeltaF @ qO 作用于 restLocal 旋转）
-    // 注意 basis 是相对 F 的：P_rot = qDelta @ qO ⟹ B_rot = inv(F_rot) @ (qDelta @ qO)
     const qF = new Quaternion().setFromRotationMatrix(_pureRot(F));
     let qWorld;
-    const curQ = new Quaternion();
-    B.decompose(_V1, curQ, _V2);
     if (con.mix_mode === 'BEFORE') qWorld = qDeltaF.clone().multiply(qF).multiply(curQ);
     else if (con.mix_mode === 'AFTER') qWorld = qF.clone().multiply(curQ).multiply(qDeltaF);
     else qWorld = qDeltaF.clone().multiply(qO);
