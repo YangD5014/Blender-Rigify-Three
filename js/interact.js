@@ -98,21 +98,25 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     }
   });
 
+  // 右键用于 widget 旋转 → 阻止浏览器右键菜单
+  dom.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
   dom.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 0) return; // 中/右键 → OrbitControls
+    const isRotateButton = ev.button === 2; // 右键 = 旋转
+    if (ev.button !== 0 && ev.button !== 2) return; // 中键 → OrbitControls 缩放
     const w = pick(ev);
     if (!w) {
-      if (selected) { setVisual(selected, 'normal'); selected = null; onSelection(null); }
-      return;
+      if (ev.button === 0 && selected) { setVisual(selected, 'normal'); selected = null; onSelection(null); }
+      return; // 空处：左键旋转视图 / 右键平移（OrbitControls 接管）
     }
     if (selected && selected !== w) setVisual(selected, 'normal');
     selected = w;
     setVisual(w, 'selected');
     onSelection(w.name);
-    controls.enabled = false;
+    controls.enabled = false; // 挂住 widget 时屏蔽视图操作
     const viewDir = _v1.set(0, 0, -1).applyQuaternion(camera.quaternion).clone().normalize();
     const head = new Vector3().setFromMatrixPosition(w.bone.matrixWorld);
-    if (ev.shiftKey) {
+    if (isRotateButton || ev.shiftKey) {
       // 旋转：绕视图轴过骨骼头
       const rect = dom.getBoundingClientRect();
       drag = {

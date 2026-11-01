@@ -84,7 +84,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.05, 0.2);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
-controls.mouseButtons = { LEFT: null, MIDDLE: 0 /* ROTATE */, RIGHT: 2 /* PAN */ };
+controls.mouseButtons = { LEFT: 0 /* ROTATE */, MIDDLE: 1 /* DOLLY */, RIGHT: 2 /* PAN */ };
 
 scene.add(new HemisphereLight(0xbfbfd8, 0x3a3a35, 1.1));
 const sun = new DirectionalLight(0xffffff, 1.6);
