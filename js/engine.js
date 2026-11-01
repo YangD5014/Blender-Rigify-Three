@@ -29,8 +29,12 @@ export class RigEngine {
     }
     this.warnedTypes = new Set();
     this.resetBases();
-    // P 持久化：循环依赖的目标读「上一帧」状态（与 Blender 对 cyclic 约束的处理一致）
+    // P 持久化：循环依赖的目标读「上一帧」状态（与 Blender 对 cyclic 约束的处理一致）。
+    // 初始状态 = 收敛后的「求值 rest」（含静止位约束旋转，如 hand_track 的 0.8 残差），
+    // 而非原始 rest 矩阵 —— 否则冷启动 stale 读数与 Blender 不同，IK 分支会翻转
+    // （hand_L_back 实测肘部分支翻转 0.806，已踩坑验证）。
     for (const rec of this.bones.values()) this.P.set(rec.name, rec.rest.clone());
+    for (let i = 0; i < 3; i++) this.evaluate();
   }
 
   resetBases() {
@@ -115,22 +119,18 @@ export class RigEngine {
     const tRec = this.bones.get(con.subtarget);
     if (!tRec) return B;
     const T = this.P.get(con.subtarget) || tRec.rest;
-    // Blender 语义（对照真值反推）：位置 = owner rest 点 +（目标当前点 − 目标 rest 点）；
-    // 旋转 = 目标相对其 rest 的旋转差叠加在 owner rest 朝向上；缩放原样携带目标当前缩放。
-    const restO = rec.rest;
-    const pNew = new Vector3().setFromMatrixPosition(restO)
-      .add(new Vector3().subVectors(
-        this._targetPoint(con, tRec, T, 0),
-        this._targetPoint(con, tRec, tRec.rest, 0),
-      ));
-    const qT = new Quaternion().setFromRotationMatrix(_pureRot(T));
-    const qTr = new Quaternion().setFromRotationMatrix(_pureRot(tRec.rest));
-    const qO = new Quaternion().setFromRotationMatrix(_pureRot(restO));
-    const qNew = qT.multiply(qTr.invert()).multiply(qO);
-    const sT = new Vector3();
-    T.decompose(_V1, _Q1, sT);
-    const PNew = new Matrix4().compose(pNew, qNew, sT);
-    let Bnew = new Matrix4().copy(F).invert().multiply(PNew);
+    // Blender 语义（GT 实证）：直接拷贝目标矩阵。
+    // WORLD/WORLD: owner 世界矩阵 = target 世界矩阵（缩放原样携带，rest 还原靠 Rigify 共位）；
+    // LOCAL/LOCAL: owner basis = target basis（通道级拷贝）。
+    let Bnew;
+    if (con.owner_space === 'LOCAL' || con.target_space === 'LOCAL') {
+      const FT = tRec.parent
+        ? new Matrix4().multiplyMatrices(this.P.get(tRec.parent), tRec.restLocal)
+        : tRec.rest.clone();
+      Bnew = new Matrix4().copy(FT).invert().multiply(T);
+    } else {
+      Bnew = new Matrix4().copy(F).invert().multiply(T);
+    }
     if (con.mix_mode === 'BEFORE') {
       Bnew = new Matrix4().multiplyMatrices(Bnew, B);
     } else if (con.mix_mode === 'AFTER') {
@@ -144,18 +144,11 @@ export class RigEngine {
     if (!tRec) return B;
     const T = this.P.get(con.subtarget) || tRec.rest;
     const ht = con.head_tail || 0;
-    // 世界系 delta =（目标当前点 − 目标 rest 点），轴过滤后加到 owner rest 点上
-    const delta = new Vector3().subVectors(
-      this._targetPoint(con, tRec, T, ht),
-      this._targetPoint(con, tRec, tRec.rest, ht),
-    );
-    const dx = con.use_x === false ? 0 : delta.x * (con.invert_x ? -1 : 1);
-    const dy = con.use_y === false ? 0 : delta.y * (con.invert_y ? -1 : 1);
-    const dz = con.use_z === false ? 0 : delta.z * (con.invert_z ? -1 : 1);
-    const pNew = new Vector3().setFromMatrixPosition(rec.rest).add(new Vector3(dx, dy, dz));
-    // 只改世界位置：P_new = P_cur 平移替换，再转回 basis 空间
+    // Blender 语义（GT 实证）：owner 世界位置 = 目标点世界位置（head_tail 沿目标 Y 插值），
+    // 旋转/缩放保持不变，无任何 rest 补偿。
+    const tp = this._targetPoint(con, tRec, T, ht);
     const Pcur = new Matrix4().multiplyMatrices(F, B);
-    const Pnew = Pcur.clone().setPosition(pNew);
+    const Pnew = Pcur.clone().setPosition(tp);
     const out = new Matrix4().copy(F).invert().multiply(Pnew);
     return _blend(B, out, influence);
   }
