@@ -140,7 +140,11 @@ function buildWidgets() {
   for (const [name, rec] of rigData.bones) {
     if (!rec.shape || !rigData.widgetGeoms[rec.shape]) continue;
     const geo = rigData.widgetGeoms[rec.shape];
-    const bone = boneByName.get(name);
+    // shape_transform（custom_shape_transform）：widget 画在参考骨的位置而非
+    // 控制器自身头部 —— 如 tail_master.001 的 widget 画在 tweak_tail.004（尾尖）。
+    // 尺寸缩放仍用 owner 骨长（Blender use_custom_shape_bone_size 语义）。
+    const anchorName = rec.shapeTransform || name;
+    const bone = boneByName.get(anchorName) || boneByName.get(name);
     if (!bone) continue;
     const holder = new Object3D();
     const s = rec.shapeScale || [1, 1, 1];
