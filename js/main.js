@@ -68,7 +68,8 @@ modelRoot.traverse((o) => {
 
 // ---------- 场景 ----------
 const scene = new Scene();
-scene.background = new Color(0x232323);
+const SCENE_BG = { dark: new Color(0x232323), light: new Color(0xe8eaee) };
+scene.background = SCENE_BG.dark;
 scene.add(modelRoot);
 
 const camera = new PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
@@ -102,8 +103,9 @@ function makeAxisLine(a, b, color) {
   const g = new BufferGeometry().setFromPoints([a, b]);
   return new LineSegments(g, new LineBasicMaterial({ color, transparent: true, opacity: 0.55 }));
 }
-scene.add(makeAxisLine(new V3(-3, 0, 0), new V3(3, 0, 0), 0x9b4a4a));
-scene.add(makeAxisLine(new V3(0, 0, -3), new V3(0, 0, 3), 0x4a7b9b));
+const axisX = makeAxisLine(new V3(-3, 0, 0), new V3(3, 0, 0), 0x9b4a4a);
+const axisZ = makeAxisLine(new V3(0, 0, -3), new V3(0, 0, 3), 0x4a7b9b);
+scene.add(axisX, axisZ);
 
 // ---------- 非骨骼子物件（眼睛/胡须/耳饰等）----------
 // glTF 导出器已保留骨骼父子关系（眼球/胡须/耳饰是骨骼子节点，local 正确）——
@@ -236,6 +238,35 @@ function updateHud(selected) {
     .join('　');
   hud.innerHTML = `<b>${selected}</b>　<span style="color:#666">${(rec.collections || []).join(' · ')}</span>${propStr ? `<br>${propStr}` : ''}`;
 }
+
+// ---------- 明暗主题 ----------
+let lightTheme = localStorage.getItem('petTwinTheme') === 'light';
+const widgetBaseColors = widgets.map(w => w.colorNormal.clone());
+
+function applyTheme(light) {
+  lightTheme = light;
+  document.body.classList.toggle('light', light);
+  document.getElementById('themeBtn').textContent = light ? '🌙' : '☀';
+  scene.background = light ? SCENE_BG.light : SCENE_BG.dark;
+  grid.material.color.set(light ? 0x9aa0a8 : 0xffffff);
+  axisX.material.color.set(light ? 0xc07070 : 0x9b4a4a);
+  axisZ.material.color.set(light ? 0x7090c0 : 0x4a7b9b);
+  for (let i = 0; i < widgets.length; i++) {
+    const w = widgets[i];
+    w.colorNormal.copy(widgetBaseColors[i]);
+    w.colorHover.copy(w.colorNormal).multiplyScalar(0.5).addScalar(light ? 0.22 : 0.5);
+    if (light) w.colorNormal.multiplyScalar(0.55);
+    if (appSelected() === w.name) w.line.material.color.copy(w.colorSelected);
+    else w.line.material.color.copy(w.colorNormal);
+  }
+}
+function appSelected() { return window.__app ? window.__app.interaction.getSelected() : null; }
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  applyTheme(!lightTheme);
+  localStorage.setItem('petTwinTheme', lightTheme ? 'light' : 'dark');
+});
+applyTheme(lightTheme);
 
 // ---------- 渲染循环 ----------
 renderer.setAnimationLoop(() => {

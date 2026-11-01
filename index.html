@@ -3,58 +3,84 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>猫咪 Rigify 姿态模式 · Three.js</title>
+<title>宠影孪生-数字孪生体操作平台</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #232323; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 12px; color: #d1d1d1; }
+  :root {
+    --bg: #232323; --panel: #2b2b2bee; --border: #1a1a1a; --border2: #1f1f1f;
+    --text: #d1d1d1; --text-dim: #888; --text-faint: #666;
+    --accent: #e87d0d; --accent-press: #1a1a1a; --accent-border: #b35f00;
+    --btn-bg: #3d3d3d; --btn-text: #ccc; --btn-hover-bg: #4a4a4a; --btn-hover-text: #fff;
+    --hud-bg: #2b2b2bcc; --hud-text: #999; --hint-text: #888; --hint-b: #ccc;
+    --slider-label: #aaa; --slider-val: #7fa7d9;
+    --coll-hover: #353535; --coll-count: #666;
+    --load-bg: #232323; --load-bar: #3a3a3a;
+  }
+  body.light {
+    --bg: #e8eaee; --panel: #f7f8faf5; --border: #c9ccd4; --border2: #dde0e6;
+    --text: #2a2c30; --text-dim: #6a6d74; --text-faint: #9a9da4;
+    --accent: #d96f04; --accent-press: #fff; --accent-border: #a85c00;
+    --btn-bg: #e7e9ee; --btn-text: #3a3c40; --btn-hover-bg: #d9dce2; --btn-hover-text: #1e2024;
+    --hud-bg: #f7f8fad9; --hud-text: #5a5d63; --hint-text: #6a6d74; --hint-b: #2a2c30;
+    --slider-label: #55585e; --slider-val: #3567b0;
+    --coll-hover: #e2e5ea; --coll-count: #9a9da4;
+    --load-bg: #e8eaee; --load-bar: #c9ccd4;
+  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 12px; color: var(--text); transition: background 0.25s, color 0.25s; }
   #viewport { position: absolute; inset: 0; }
   #panel {
     position: absolute; top: 0; left: 0; bottom: 0; width: 250px;
-    background: #2b2b2bee; border-right: 1px solid #1a1a1a;
+    background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; z-index: 10;
     backdrop-filter: blur(4px);
   }
   #panel h1 {
-    font-size: 13px; padding: 10px 12px 8px; color: #e87d0d; font-weight: 600;
-    border-bottom: 1px solid #1a1a1a; letter-spacing: 0.5px;
+    font-size: 13px; padding: 10px 12px 8px; color: var(--accent); font-weight: 600;
+    border-bottom: 1px solid var(--border); letter-spacing: 0.5px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
-  #panel .section { padding: 8px 12px; border-bottom: 1px solid #1f1f1f; }
-  #panel .section h2 { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  #themeBtn {
+    background: none; border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); cursor: pointer; font-size: 12px; padding: 1px 6px; flex: none;
+  }
+  #themeBtn:hover { background: var(--btn-hover-bg); }
+  #panel .section { padding: 8px 12px; border-bottom: 1px solid var(--border2); }
+  #panel .section h2 { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
   #presets button, #tools button {
     display: inline-block; margin: 2px 3px 2px 0; padding: 3px 8px;
-    background: #3d3d3d; color: #ccc; border: 1px solid #1a1a1a; border-radius: 3px;
+    background: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--border); border-radius: 3px;
     cursor: pointer; font-size: 11px;
   }
-  #presets button:hover, #tools button:hover { background: #4a4a4a; color: #fff; }
-  #presets button.active, #tools button.active { background: #e87d0d; color: #1a1a1a; border-color: #b35f00; }
+  #presets button:hover, #tools button:hover { background: var(--btn-hover-bg); color: var(--btn-hover-text); }
+  #presets button.active, #tools button.active { background: var(--accent); color: var(--accent-press); border-color: var(--accent-border); }
   #collections { overflow-y: auto; flex: 1; }
   .coll-row { display: flex; align-items: center; padding: 2px 12px; cursor: pointer; border-radius: 2px; }
-  .coll-row:hover { background: #353535; }
+  .coll-row:hover { background: var(--coll-hover); }
   .coll-row input { margin-right: 6px; accent-color: #e87d0d; }
   .coll-row .name { flex: 1; }
-  .coll-row .count { color: #666; font-size: 10px; }
+  .coll-row .count { color: var(--coll-count); font-size: 10px; }
   .slider-row { display: flex; align-items: center; margin: 4px 0; }
-  .slider-row label { width: 118px; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slider-row label { width: 118px; color: var(--slider-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .slider-row input[type=range] { flex: 1; accent-color: #4772b3; }
-  .slider-row .val { width: 34px; text-align: right; color: #7fa7d9; font-size: 10px; }
+  .slider-row .val { width: 34px; text-align: right; color: var(--slider-val); font-size: 10px; }
   #hud {
     position: absolute; top: 10px; right: 12px; z-index: 10;
-    background: #2b2b2bcc; padding: 6px 10px; border-radius: 4px;
-    font-size: 11px; color: #999; pointer-events: none; line-height: 1.6;
+    background: var(--hud-bg); padding: 6px 10px; border-radius: 4px;
+    font-size: 11px; color: var(--hud-text); pointer-events: none; line-height: 1.6;
   }
-  #hud b { color: #e87d0d; }
+  #hud b { color: var(--accent); }
   #hintbar {
     position: absolute; bottom: 0; left: 0; right: 0; z-index: 10;
-    background: #2b2b2bee; border-top: 1px solid #1a1a1a;
-    padding: 5px 12px; font-size: 11px; color: #888;
+    background: var(--panel); border-top: 1px solid var(--border);
+    padding: 5px 12px; font-size: 11px; color: var(--hint-text);
   }
-  #hintbar b { color: #ccc; }
+  #hintbar b { color: var(--hint-b); }
   #loading {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: #232323; z-index: 100; font-size: 14px; color: #e87d0d;
+    background: var(--load-bg); z-index: 100; font-size: 14px; color: var(--accent);
     flex-direction: column; gap: 10px;
   }
-  #loading .bar { width: 220px; height: 4px; background: #3a3a3a; border-radius: 2px; overflow: hidden; }
+  #loading .bar { width: 220px; height: 4px; background: var(--load-bar); border-radius: 2px; overflow: hidden; }
   #loading .bar i { display: block; height: 100%; width: 30%; background: #e87d0d; border-radius: 2px; animation: slide 1.2s ease-in-out infinite; }
   @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
 </style>
@@ -62,7 +88,7 @@
 <body>
 <div id="viewport"></div>
 <div id="panel">
-  <h1>🐈 猫咪 Rigify · 姿态模式</h1>
+  <h1>🐾 宠影孪生-数字孪生体操作平台 <button id="themeBtn" title="切换明暗模式">🌙</button></h1>
   <div class="section" id="presets-section">
     <h2>姿态预设</h2>
     <div id="presets"></div>
@@ -93,6 +119,6 @@
   }
 }
 </script>
-<script type="module" src="./js/main.js?v=1793519745"></script>
+<script type="module" src="./js/main.js?v=1793520164"></script>
 </body>
 </html>
