@@ -59,7 +59,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
       drag = {
         widget: w, mode: 'move', modal: true, viewDir,
         plane: new Plane().setFromNormalAndCoplanarPoint(viewDir, head),
-        startHit: rayPlane(mouse, new Plane().setFromNormalAndCoplanarPoint(viewDir, head)),
+        startHit: rayPlane(mouse, new Plane().setFromNormalAndCoplanarPoint(viewDir, head), head),
         startP: engine.P.get(w.name).clone(),
         startBasis: engine.getBasis(w.name).clone(),
         lockAxis: null,
@@ -189,7 +189,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
       drag = {
         widget: w, mode: 'move', viewDir,
         plane: new Plane().setFromNormalAndCoplanarPoint(viewDir, head),
-        startHit: rayPlane(ev, new Plane().setFromNormalAndCoplanarPoint(viewDir, head)),
+        startHit: rayPlane(ev, new Plane().setFromNormalAndCoplanarPoint(viewDir, head), head),
         startP: engine.P.get(w.name).clone(),
         startBasis: engine.getBasis(w.name).clone(),
         lockAxis: null,
@@ -203,7 +203,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     return { x: (p.x * 0.5 + 0.5) * rect.width + rect.left, y: (-p.y * 0.5 + 0.5) * rect.height + rect.top };
   }
 
-  function rayPlane(ev, plane) {
+  function rayPlane(ev, plane, fallback) {
     const rect = dom.getBoundingClientRect();
     const ndc = {
       x: ((ev.clientX - rect.left) / rect.width) * 2 - 1,
@@ -211,14 +211,15 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     };
     raycaster.setFromCamera(ndc, camera);
     const hit = new Vector3();
-    return raycaster.ray.intersectPlane(plane, hit) ? hit : new Vector3().setFromMatrixPosition(drag.startP);
+    // 相交失败（平行/背向）时退回调用方给定的参考点
+    return raycaster.ray.intersectPlane(plane, hit) ? hit : (fallback ? fallback.clone() : new Vector3());
   }
 
   function onDrag(ev) {
     const w = drag.widget;
     const rec = rigData.bones.get(w.name);
     if (drag.mode === 'move') {
-      const hit = rayPlane(ev, drag.plane);
+      const hit = rayPlane(ev, drag.plane, drag.startHit);
       const delta = hit.clone().sub(drag.startHit);
       if (drag.lockAxis) {
         // 轴名 = Blender 轴：X→右，Y→前，Z→上。映射到 glTF：X→X，Y→−Z，Z→Y
