@@ -1,4 +1,4 @@
-# Blender-Rigify-Three
+# 宠影孪生-数字孪生体操作平台
 
 把 **Blender Rigify 绑定的猫咪**（328 骨、97 个控制器 widget）搬进浏览器：
 像 Blender 姿态模式一样**拖拽 widget 控制器**，蒙皮模型实时反馈，IK / 约束 / 驱动器行为与 Blender 对齐。
