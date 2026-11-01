@@ -138,7 +138,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
         lockAxis: null,
       };
     }
-    dom.setPointerCapture(ev.pointerId);
+    try { dom.setPointerCapture(ev.pointerId); } catch { /* 合成事件无活动指针 */ }
   });
 
   function worldToScreen(v, rect) {
