@@ -119,6 +119,8 @@ function topoSort(bones) {
     const t = new Set();
     if (rec.parent) p.add(rec.parent);
     for (const c of rec.constraints) {
+      // _track 骨的 DAMPED_TRACK target 边丢弃（读上一帧值，Blender 在此断环）
+      if (rec.name.includes('_track') && c.type === 'DAMPED_TRACK') continue;
       if (c.subtarget && bones.has(c.subtarget)) t.add(c.subtarget);
       if (c.type === 'IK' && c.pole_subtarget && bones.has(c.pole_subtarget)) t.add(c.pole_subtarget);
       if (c.type === 'ARMATURE') {
@@ -127,8 +129,7 @@ function topoSort(bones) {
         }
       }
     }
-    // 注意：shapeTransform（widget 姿态参考骨）不加入求值依赖 —— 它是绘制期概念，
-    // 加入会制造假环（如 upper_arm_ik.L ⇄ MCH-upper_arm_ik.L），打乱真实求值顺序。
+    if (rec.shapeTransform && bones.has(rec.shapeTransform)) t.add(rec.shapeTransform);
     parentDeps.set(rec.name, p);
     targetDeps.set(rec.name, t);
   }
