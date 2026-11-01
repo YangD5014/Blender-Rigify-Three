@@ -221,14 +221,14 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
       const hit = rayPlane(ev, drag.plane);
       const delta = hit.clone().sub(drag.startHit);
       if (drag.lockAxis) {
-        delta[drag.lockAxis] = delta.dot(_v2.set(
-          drag.lockAxis === 'x' ? 1 : 0,
-          drag.lockAxis === 'y' ? 1 : 0,
-          drag.lockAxis === 'z' ? 1 : 0,
-        ));
-        delta.x = drag.lockAxis === 'x' ? delta.x : 0;
-        delta.y = drag.lockAxis === 'y' ? delta.y : 0;
-        delta.z = drag.lockAxis === 'z' ? delta.z : 0;
+        // 轴名 = Blender 轴：X→右，Y→前，Z→上。映射到 glTF：X→X，Y→−Z，Z→Y
+        const g = { x: delta.x, y: -delta.z, z: delta.y };
+        const keep = g[drag.lockAxis];
+        delta.set(
+          drag.lockAxis === 'x' ? keep : 0,
+          drag.lockAxis === 'z' ? keep : 0,
+          drag.lockAxis === 'y' ? -keep : 0,
+        );
       }
       // P' = P0 + Δ（世界平移），basis = inv(parentP @ restLocal) @ P'
       const Pnew = drag.startP.clone().setPosition(
