@@ -23,9 +23,11 @@ async function loadJSON(url) { return (await fetch(url)).json(); }
 const loadingEl = document.getElementById('loading');
 
 // ---------- 资源加载 ----------
+// 资源基址：本地开发用相对路径；部署版由入口页注入 jsDelivr 基址
+const ASSET_BASE = window.__ASSET_BASE || './';
 const [rigJson, posesJson] = await Promise.all([
-  loadJSON('./data/rig.json'),
-  loadJSON('./data/poses2.json'),
+  loadJSON(ASSET_BASE + 'data/rig.json'),
+  loadJSON(ASSET_BASE + 'data/poses2.json'),
 ]);
 
 const rigData = buildRigData(rigJson);
@@ -39,7 +41,7 @@ const armOffset = new V3(mw[3], mw[11], -mw[7]);
 
 // GLB 加载
 const gltf = await new Promise((res, rej) => {
-  new GLTFLoader().load('./data/cat.glb', res, undefined, rej);
+  new GLTFLoader().load(ASSET_BASE + 'data/cat.glb', res, undefined, rej);
 });
 const modelRoot = gltf.scene;
 
