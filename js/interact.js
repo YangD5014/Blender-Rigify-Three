@@ -34,7 +34,57 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
 
   let hovered = null;
   let selected = null;
-  let drag = null; // { widget, mode:'move'|'rotate', plane, startHit, startP, startBasis, lockAxis, startAngle, screenCenter }
+  let drag = null; // { widget, mode:'move'|'rotate', modal, plane, startHit, startP, startBasis, lockAxis, startAngle, screenCenter }
+  let lastMouse = null; // 视口坐标，供 G/R 模态起点使用
+
+  // ---------- Blender 式模态操作 ----------
+  // G = 移动模式（控制器跟随鼠标，无需按住按钮）；R = 旋转模式。
+  // 移动中 X/Y/Z 锁轴；左键/Enter 确认；Esc/右键取消。
+  function startModal(type) {
+    if (drag) return;
+    const w = selected || (lastMouse ? pick({ clientX: lastMouse.x, clientY: lastMouse.y }) : null);
+    if (!w) return;
+    if (selected !== w) {
+      if (selected) setVisual(selected, 'normal');
+      selected = w;
+      onSelection(w.name);
+    }
+    setVisual(w, 'selected');
+    controls.enabled = false;
+    const viewDir = _v1.set(0, 0, -1).applyQuaternion(camera.quaternion).clone().normalize();
+    const head = new Vector3().setFromMatrixPosition(w.bone.matrixWorld);
+    const rect = dom.getBoundingClientRect();
+    const mouse = lastMouse || { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    if (type === 'move') {
+      drag = {
+        widget: w, mode: 'move', modal: true, viewDir,
+        plane: new Plane().setFromNormalAndCoplanarPoint(viewDir, head),
+        startHit: rayPlane(mouse, new Plane().setFromNormalAndCoplanarPoint(viewDir, head)),
+        startP: engine.P.get(w.name).clone(),
+        startBasis: engine.getBasis(w.name).clone(),
+        lockAxis: null,
+      };
+    } else {
+      drag = {
+        widget: w, mode: 'rotate', modal: true, viewDir,
+        center: head.clone(),
+        screenCenter: worldToScreen(head, rect),
+        startAngle: Math.atan2(mouse.y - worldToScreen(head, rect).y, mouse.x - worldToScreen(head, rect).x),
+        startP: engine.P.get(w.name).clone(),
+        startBasis: engine.getBasis(w.name).clone(),
+      };
+    }
+  }
+
+  function endModal(apply) {
+    if (!drag) return;
+    if (!apply) {
+      engine.setBasis(drag.widget.name, drag.startBasis.clone());
+      onChange();
+    }
+    drag = null;
+    controls.enabled = true;
+  }
 
   // 屏幕空间拾取：把 widget 的边投影到屏幕，取光标附近（<PICK_PX）最近者。
   // 线框 widget 的中部没有可 raycast 的几何，屏幕空间法对 Blender 式 widget 最稳。
@@ -88,6 +138,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
 
   // ---------- 指针事件 ----------
   dom.addEventListener('pointermove', (ev) => {
+    lastMouse = { x: ev.clientX, y: ev.clientY };
     if (drag) { onDrag(ev); return; }
     const w = pick(ev);
     if (w !== hovered) {
@@ -102,6 +153,12 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
   dom.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
   dom.addEventListener('pointerdown', (ev) => {
+    // 模态进行中：左键/Enter=确认（保持当前姿态），右键=取消（还原）
+    if (drag && drag.modal) {
+      if (ev.button === 0) endModal(true);
+      else if (ev.button === 2) endModal(false);
+      return;
+    }
     const isRotateButton = ev.button === 2; // 右键 = 旋转
     if (ev.button !== 0 && ev.button !== 2) return; // 中键 → OrbitControls 缩放
     const w = pick(ev);
@@ -206,24 +263,36 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
   }
 
   dom.addEventListener('pointerup', (ev) => {
-    if (drag) {
+    if (drag && !drag.modal) { // 模态不受 pointerup 结束（由确认/取消结束）
       drag = null;
       controls.enabled = true;
-      dom.releasePointerCapture(ev.pointerId);
+      try { dom.releasePointerCapture(ev.pointerId); } catch { /* 合成事件 */ }
     }
   });
 
-  // 拖动中轴锁定 / Esc 取消
+  // Blender 式模态键：G/R 启动 · 拖动中 X/Y/Z 轴锁定 · Enter/左键 确认 · Esc/右键 取消
   addEventListener('keydown', (ev) => {
-    if (drag && drag.mode === 'move' && ['x', 'y', 'z'].includes(ev.key.toLowerCase())) {
+    if (!drag) {
+      if (ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const k = ev.key.toLowerCase();
+      if (k === 'g') startModal('move');
+      else if (k === 'r') startModal('rotate');
+      return;
+    }
+    if (drag.mode === 'move' && ['x', 'y', 'z'].includes(ev.key.toLowerCase())) {
       const k = ev.key.toLowerCase();
       drag.lockAxis = drag.lockAxis === k ? null : k;
       ev.preventDefault();
-    } else if (drag && ev.key === 'Escape') {
-      engine.setBasis(drag.widget.name, drag.startBasis.clone());
-      drag = null;
-      controls.enabled = true;
-      onChange();
+    } else if (ev.key === 'Escape') {
+      if (drag.modal) endModal(false);
+      else {
+        engine.setBasis(drag.widget.name, drag.startBasis.clone());
+        drag = null;
+        controls.enabled = true;
+        onChange();
+      }
+    } else if (drag.modal && ev.key === 'Enter') {
+      endModal(true);
     }
   });
 
