@@ -57,7 +57,6 @@ data/
   rig.json        Blender 导出：328 骨 rest 矩阵/父级/约束栈/97 widget 几何/驱动器规则
   poses2.json     32 个真值姿态（输入 basis + Blender 求值输出矩阵）→ 校验基准
   cat.glb         蒙皮网格（328 关节 + 顶色材质）
-  props.json      眼球/胡须/耳饰等骨骼子物件的挂接矩阵（Blender 侧离线计算）
 js/
   rigdata.js      rest 矩阵换算（Blender Z-up → glTF 左乘 C；bone-space 数据原样保留）
   engine.js       Blender 姿态求值引擎：层级 → basis → 约束栈

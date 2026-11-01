@@ -23,10 +23,9 @@ async function loadJSON(url) { return (await fetch(url)).json(); }
 const loadingEl = document.getElementById('loading');
 
 // ---------- 资源加载 ----------
-const [rigJson, posesJson, propsMap] = await Promise.all([
+const [rigJson, posesJson] = await Promise.all([
   loadJSON('./data/rig.json'),
   loadJSON('./data/poses2.json'),
-  loadJSON('./data/props.json'),
 ]);
 
 const rigData = buildRigData(rigJson);
@@ -106,34 +105,32 @@ function makeAxisLine(a, b, color) {
 scene.add(makeAxisLine(new V3(-3, 0, 0), new V3(3, 0, 0), 0x9b4a4a));
 scene.add(makeAxisLine(new V3(0, 0, -3), new V3(0, 0, 3), 0x4a7b9b));
 
-// ---------- 非骨骼子物件挂接 ----------
-// glTF 导出器丢了 armature 物体的世界平移（z=+1.0868，rig 子树在 armature space），
-// 整体上移让猫脚落回地面；骨骼子物件的挂接矩阵由 Blender 数据离线计算
-// （data/props.json：parent_bone + 骨骼空间 local 4x4，含 matrix_parent_inverse 语义）。
+// ---------- 非骨骼子物件（眼睛/胡须/耳饰等）----------
+// glTF 导出器已保留骨骼父子关系（眼球/胡须/耳饰是骨骼子节点，local 正确）——
+// 直接使用，不做任何重挂接（重挂接曾引入恰好一个 armature 偏移的漂移，已踩坑验证）。
+// 导出器丢了 armature 物体的世界平移（z=+1.0868，rig 子树在 armature space），
+// 整体上移让猫脚落回地面；真正无主的脸部高光等零散物件反向抵消该平移。
 modelRoot.position.set(0, armOffset.y, 0);
 modelRoot.updateMatrixWorld(true);
-for (const [propName, info] of Object.entries(propsMap)) {
-  const node = nodeBySanitized.get(propName) || nodeBySanitized.get(sanitizeNodeName(propName));
-  const bone = boneByName.get(info.bone);
-  if (!node || !bone) continue;
-  if (!node.name.startsWith(propName.split('.')[0])) node.name = propName;
-  const local = new M4().fromArray(info.local); // fromArray 为列主序 → 需转置
-  local.transpose();
-  if (node.parent) node.parent.remove(node);
-  bone.add(node);
-  node.matrixAutoUpdate = false;
-  node.matrix.copy(local);
-  node.matrixWorldNeedsUpdate = true;
-}
-// 无父骨的零散物件平移进 armature 空间
 modelRoot.traverse((o) => {
-  if (!o.isBone && o.isMesh && !propsMap[o.name] && !o.name.startsWith('WGT')) {
+  if (!o.isBone && o.isMesh && !o.name.startsWith('WGT')
+      && !(o.parent && o.parent.isBone) && o.parent !== modelRoot) {
+    // 非骨骼子节点的挂件（挂在其他物体上）——目前场景里没有，保险处理
     o.position.x -= armOffset.x;
     o.position.y -= armOffset.y;
     o.position.z -= armOffset.z;
     o.updateMatrix();
   }
 });
+// 场景根级的零散物件（眼球高光等，世界坐标已含 armature 平移）：抵消根平移
+for (const prop of modelRoot.children) {
+  if (prop.isMesh && !prop.isSkinnedMesh && !prop.name.startsWith('WGT')) {
+    prop.position.x -= armOffset.x;
+    prop.position.y -= armOffset.y;
+    prop.position.z -= armOffset.z;
+    prop.updateMatrix();
+  }
+}
 
 // ---------- widget 构建 ----------
 const widgets = [];
