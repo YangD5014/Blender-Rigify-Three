@@ -162,9 +162,13 @@ function buildWidgets() {
     }
     const lg = new BufferGeometry();
     lg.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+    // Blender 姿态模式的 "In Front" 行为：widget 穿透网格画在最上层，
+    // 否则尾巴根/身体内部的 widget 会被网格遮挡（tail_master 曾因此不可见）。
     const line = new LineSegments(lg, new LineBasicMaterial({
       color: new Color(col[0], col[1], col[2]), transparent: true, opacity: 0.95,
+      depthTest: false,
     }));
+    line.renderOrder = 10;
     line.userData.widget = true;
     holder.add(line);
 
@@ -179,7 +183,9 @@ function buildWidgets() {
       const mesh = new Mesh(tg, new MeshBasicMaterial({
         color: new Color(col[0], col[1], col[2]),
         transparent: true, opacity: 0.16, side: DoubleSide, depthWrite: false,
+        depthTest: false,
       }));
+      mesh.renderOrder = 9;
       mesh.userData.widget = true;
       holder.add(mesh);
     }
