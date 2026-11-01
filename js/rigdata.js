@@ -191,7 +191,27 @@ function topoSort(bones) {
   }
   for (const name of bones.keys()) visit(name);
   if (broken.size) console.warn('断开的环依赖边:', [...broken].join(', '));
-  return order;
+  // 后处理：强制「父级先于子级」。DFS 断环时可能连父级边一起跳过（如 tail.002
+  // 排到父级 tail.001 之前），导致父子传导断裂（tweak_tail 拖不动的根因）。
+  const pos = new Map(order.map((n, i) => [n, i]));
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (const [name, i] of [...pos.entries()].sort((a, b) => a[1] - b[1])) {
+      const rec = bones.get(name);
+      if (!rec.parent || !pos.has(rec.parent)) continue;
+      const pi = pos.get(rec.parent);
+      if (pi > i) {
+        // 把自己移到父级之后：父级与之间的骨依次前移一格
+        for (const [n2, i2] of pos.entries()) {
+          if (i2 > i && i2 <= pi) pos.set(n2, i2 - 1);
+        }
+        pos.set(name, pi);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return [...pos.entries()].sort((a, b) => a[1] - b[1]).map(([n]) => n);
 }
 
 /** 默认自定义属性值（数值型） */
