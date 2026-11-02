@@ -28,6 +28,9 @@ export class RigEngine {
       if (r.kind === 'weight') this.weightRules.set(`${r.bone}\u0000${r.con}\u0000${r.index}`, r);
     }
     this.warnedTypes = new Set();
+    // 交互式 IK 覆写：被覆写的骨骼跳过自身约束栈，直接使用外部写入的 basis
+    // （如拖动 tail_master.001 → 尾部 IK 求解，tail.001-004 的 Copy Rotation 不再覆盖结果）
+    this.overrides = new Set();
     this.resetBases();
     // P 持久化：循环依赖的目标读「上一帧」状态（与 Blender 对 cyclic 约束的处理一致）
     for (const rec of this.bones.values()) this.P.set(rec.name, rec.rest.clone());
@@ -38,6 +41,19 @@ export class RigEngine {
     for (const rec of this.bones.values()) {
       this.bases.set(rec.name, new Matrix4());
     }
+    if (this.overrides) this.overrides.clear();
+  }
+
+  /** 交互式 IK：写入 basis 并标记为覆写（求值时跳过该骨自身约束栈） */
+  setOverrideBasis(name, m) {
+    this.bases.set(name, m);
+    this.overrides.add(name);
+  }
+
+  clearOverrides(names) {
+    const list = names || [...this.overrides];
+    for (const n of list) this.bases.set(n, new Matrix4());
+    for (const n of list) this.overrides.delete(n);
   }
 
   setBasis(name, m) { this.bases.set(name, m); }
@@ -62,7 +78,8 @@ export class RigEngine {
         ? new Matrix4().multiplyMatrices(P.get(rec.parent), rec.restLocal)
         : rec.rest.clone();
       let B = this.bases.get(name);
-      for (const con of rec.constraints) {
+      if (!this.overrides.has(name)) {
+        for (const con of rec.constraints) {
         // 驱动器求值（influence / mute）
         let mute = con.mute;
         let influence = con.influence;
@@ -76,6 +93,7 @@ export class RigEngine {
         }
         if (mute || influence <= 1e-6) continue;
         B = this._applyConstraint(rec, con, B, F, influence);
+        }
       }
       P.set(name, new Matrix4().multiplyMatrices(F, B));
     }

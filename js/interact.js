@@ -19,6 +19,42 @@ const _v2 = new Vector3();
 const _m1 = new Matrix4();
 const _m2 = new Matrix4();
 
+/**
+ * 找出「旋转主控 + 尾端手柄」型控件：自身是纯旋转主控（无位置约束），
+ * widget 却画在链末端（shape_transform）。这类控件拖动时应解释为 IK 目标，
+ * 把位移交给链骨求解（如 tail_master.001 → tail.001-004）。
+ * 仅当存在「逐级 Copy Rotation」链且锚点骨是链末端后代时才登记。
+ */
+function findIkDragChains(rigData) {
+  const bones = rigData.bones;
+  const result = new Map();
+  for (const [master, rec] of bones) {
+    const anchor = rec.shapeTransform;
+    if (!anchor || !bones.has(anchor)) continue;
+    const chain = [];
+    const seen = new Set([master]);
+    let curName = master;
+    while (chain.length <= 64) {
+      const next = [...bones.values()].find((b) => !seen.has(b.name)
+        && (b.constraints || []).some((c) => c.type === 'COPY_ROTATION'
+          && c.subtarget === curName && c.influence > 0 && !c.mute));
+      if (!next) break;
+      chain.push(next.name);
+      seen.add(next.name);
+      curName = next.name;
+    }
+    if (chain.length < 2) continue;
+    let a = bones.get(anchor);
+    let anchorAtChainEnd = false;
+    while (a) {
+      if (a.name === chain[chain.length - 1]) { anchorAtChainEnd = true; break; }
+      a = a.parent ? bones.get(a.parent) : null;
+    }
+    if (anchorAtChainEnd) result.set(master, chain);
+  }
+  return result;
+}
+
 export function setupInteraction({ renderer, camera, controls, widgets, rigData, engine, boneByName, onChange, onSelection }) {
   const raycaster = new Raycaster();
   raycaster.params.Line = { threshold: 0.03 };
@@ -37,6 +73,66 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
   let drag = null; // { widget, mode:'move'|'rotate', modal, plane, startHit, startP, startBasis, lockAxis, startAngle, screenCenter }
   let lastMouse = null; // 视口坐标，供 G/R 模态起点使用
 
+  // 拖尾端手柄 = 尾部 IK 目标（见 findIkDragChains）
+  const ikDragChains = findIkDragChains(rigData);
+
+  function ikChainFor(name) { return ikDragChains.get(name); }
+
+  function snapshotIk(chain) {
+    return chain.map((n) => ({
+      name: n,
+      basis: engine.getBasis(n).clone(),
+      overridden: engine.overrides.has(n),
+    }));
+  }
+
+  function restoreIk(snapshot) {
+    if (!snapshot) return;
+    for (const s of snapshot) {
+      engine.setBasis(s.name, s.basis.clone());
+      if (s.overridden) engine.overrides.add(s.name);
+      else engine.overrides.delete(s.name);
+    }
+  }
+
+  /** 从尾部 IK 覆写状态回到主控旋转语义（拖动/旋转主控前调用） */
+  function releaseIkChain(name) {
+    const chain = ikChainFor(name);
+    if (!chain) return false;
+    if (!chain.some((n) => engine.overrides.has(n))) return false;
+    engine.clearOverrides(chain);
+    onChange();
+    return true;
+  }
+
+  /** 把拖动位移当作 IK 目标，求解链并把结果写回各骨 basis（覆写约束） */
+  function applyIkDrag(w, startAnchor, delta) {
+    const chainNames = ikChainFor(w.name);
+    if (!chainNames) return false;
+    const recs = chainNames.map((n) => rigData.bones.get(n));
+    const chain = recs.map((r) => ({
+      rec: r,
+      P: engine.P.get(r.name),
+      F: r.parent
+        ? new Matrix4().multiplyMatrices(engine.P.get(r.parent), r.restLocal)
+        : r.rest.clone(),
+    }));
+    const target = startAnchor.clone().add(delta);
+    const solved = engine.ikDelegate?.solve(chain, target, { useStretch: false });
+    if (!solved) return false;
+    let parentP = recs[0].parent ? engine.P.get(recs[0].parent) : null;
+    for (let i = 0; i < recs.length; i++) {
+      const r = recs[i];
+      const F = parentP
+        ? new Matrix4().multiplyMatrices(parentP, r.restLocal)
+        : r.rest.clone();
+      engine.setOverrideBasis(r.name, new Matrix4().copy(F).invert().multiply(solved[i]));
+      parentP = solved[i];
+    }
+    return true;
+  }
+
+
   // ---------- Blender 式模态操作 ----------
   // G = 移动模式（控制器跟随鼠标，无需按住按钮）；R = 旋转模式。
   // 移动中 X/Y/Z 锁轴；左键/Enter 确认；Esc/右键取消。
@@ -51,17 +147,21 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     }
     setVisual(w, 'selected');
     controls.enabled = false;
+    if (type === 'rotate') releaseIkChain(w.name); // 旋转主控 → 回到主控旋转语义
     const viewDir = _v1.set(0, 0, -1).applyQuaternion(camera.quaternion).clone().normalize();
     const head = new Vector3().setFromMatrixPosition(w.bone.matrixWorld);
     const rect = dom.getBoundingClientRect();
     const mouse = lastMouse || { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     if (type === 'move') {
+      const chain = ikChainFor(w.name);
       drag = {
         widget: w, mode: 'move', modal: true, viewDir,
         plane: new Plane().setFromNormalAndCoplanarPoint(viewDir, head),
         startHit: rayPlane(mouse, new Plane().setFromNormalAndCoplanarPoint(viewDir, head), head),
         startP: engine.P.get(w.name).clone(),
         startBasis: engine.getBasis(w.name).clone(),
+        startAnchor: new Vector3().setFromMatrixPosition(w.bone.matrixWorld),
+        ikSnapshot: chain ? snapshotIk(chain) : null,
         lockAxis: null,
       };
     } else {
@@ -80,6 +180,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     if (!drag) return;
     if (!apply) {
       engine.setBasis(drag.widget.name, drag.startBasis.clone());
+      restoreIk(drag.ikSnapshot);
       onChange();
     }
     drag = null;
@@ -171,9 +272,11 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     setVisual(w, 'selected');
     onSelection(w.name);
     controls.enabled = false; // 挂住 widget 时屏蔽视图操作
+    const isRotate = isRotateButton || ev.shiftKey;
+    if (isRotate) releaseIkChain(w.name); // 旋转主控 → 回到主控旋转语义
     const viewDir = _v1.set(0, 0, -1).applyQuaternion(camera.quaternion).clone().normalize();
     const head = new Vector3().setFromMatrixPosition(w.bone.matrixWorld);
-    if (isRotateButton || ev.shiftKey) {
+    if (isRotate) {
       // 旋转：绕视图轴过骨骼头
       const rect = dom.getBoundingClientRect();
       drag = {
@@ -185,13 +288,16 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
         startBasis: engine.getBasis(w.name).clone(),
       };
     } else {
-      // 移动：视图平面
+      // 移动：视图平面；尾端手柄则作为尾部 IK 目标
+      const chain = ikChainFor(w.name);
       drag = {
         widget: w, mode: 'move', viewDir,
         plane: new Plane().setFromNormalAndCoplanarPoint(viewDir, head),
         startHit: rayPlane(ev, new Plane().setFromNormalAndCoplanarPoint(viewDir, head), head),
         startP: engine.P.get(w.name).clone(),
         startBasis: engine.getBasis(w.name).clone(),
+        startAnchor: new Vector3().setFromMatrixPosition(w.bone.matrixWorld),
+        ikSnapshot: chain ? snapshotIk(chain) : null,
         lockAxis: null,
       };
     }
@@ -230,6 +336,10 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
           drag.lockAxis === 'z' ? keep : 0,
           drag.lockAxis === 'y' ? -keep : 0,
         );
+      }
+      // 尾端手柄：位移解释为尾部 IK 目标（求解后写回链骨 basis）
+      if (drag.startAnchor && ikDragChains.has(w.name)) {
+        if (applyIkDrag(w, drag.startAnchor, delta)) { onChange(); return; }
       }
       // P' = P0 + Δ（世界平移），basis = inv(parentP @ restLocal) @ P'
       const Pnew = drag.startP.clone().setPosition(
@@ -288,6 +398,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
       if (drag.modal) endModal(false);
       else {
         engine.setBasis(drag.widget.name, drag.startBasis.clone());
+        restoreIk(drag.ikSnapshot);
         drag = null;
         controls.enabled = true;
         onChange();
