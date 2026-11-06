@@ -9,8 +9,8 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520420';
-import { RigEngine } from './engine.js?v=1793520420';
+import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520430';
+import { RigEngine } from './engine.js?v=1793520430';
 import { ThreeIkDelegate } from './ikadapter.js';
 import { setupInteraction } from './interact.js';
 import { setupUI } from './ui.js';

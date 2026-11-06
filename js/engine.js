@@ -41,8 +41,9 @@ export class RigEngine {
     for (const rec of this.bones.values()) {
       this.bases.set(rec.name, new Matrix4());
     }
-    // hand_heel_ik.L / .R：默认初始旋转 X 67°（呈现 IK 相关效果）
-    const heelRot = new Matrix4().makeRotationX(67 * Math.PI / 180);
+    // hand_heel_ik.L / .R：默认初始旋转 X 67° + Z -6°（呈现 IK 相关效果）
+    const heelRot = new Matrix4().makeRotationX(67 * Math.PI / 180)
+      .multiply(new Matrix4().makeRotationZ(-6 * Math.PI / 180));
     for (const name of ['hand_heel_ik.L', 'hand_heel_ik.R']) {
       if (this.bones.has(name)) this.bases.set(name, heelRot.clone());
     }
