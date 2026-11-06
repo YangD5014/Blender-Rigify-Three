@@ -52,16 +52,15 @@ for (const pose of posesJson.poses) {
   // 2. 求值并与真值比较
   const P = engine.evaluate();
   
-// 缩放稳健的旋转差：三根局部轴方向的夹角最大值
+// 缩放稳健的旋转差：去缩放后比较四元数夹角。
+// （旧实现用轴向量夹角，COPY_TRANSFORMS 携带的非均匀缩放会把轴斜切，
+//   旋转完全正确也报 45° —— 已实测误报，改为极分解提取纯旋转。）
+const _rq = { p1: new THREE.Vector3(), q1: new THREE.Quaternion(), s1: new THREE.Vector3(),
+              p2: new THREE.Vector3(), q2: new THREE.Quaternion(), s2: new THREE.Vector3() };
 function axisRotErr(mine, gt) {
-  let m = 0;
-  for (const [x, y, z] of [[1,0,0],[0,1,0],[0,0,1]]) {
-    const a = new THREE.Vector3(x, y, z).transformDirection(mine).normalize();
-    const b = new THREE.Vector3(x, y, z).transformDirection(gt).normalize();
-    const ang = a.angleTo(b) * 180 / Math.PI;
-    if (ang > m) m = ang;
-  }
-  return m;
+  mine.decompose(_rq.p1, _rq.q1, _rq.s1);
+  gt.decompose(_rq.p2, _rq.q2, _rq.s2);
+  return _rq.q1.angleTo(_rq.q2) * 180 / Math.PI;
 }
 
   let maxD = 0; let maxR = 0; let worstBone = '';

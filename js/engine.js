@@ -37,14 +37,18 @@ export class RigEngine {
   }
 
   resetBases() {
-    // 初始 basis = 单位阵（= rest 姿态，与 GLB 导出一致；文件里保存的少量非单位 basis 不采用）
+    // 初始 basis = 单位阵（= rest 姿态）
     for (const rec of this.bones.values()) {
       this.bases.set(rec.name, new Matrix4());
+    }
+    // hand_heel_ik.L / .R：默认初始旋转 X 67°（呈现 IK 相关效果）
+    const heelRot = new Matrix4().makeRotationX(67 * Math.PI / 180);
+    for (const name of ['hand_heel_ik.L', 'hand_heel_ik.R']) {
+      if (this.bones.has(name)) this.bases.set(name, heelRot.clone());
     }
     if (this.overrides) this.overrides.clear();
   }
 
-  /** 交互式 IK：写入 basis 并标记为覆写（求值时跳过该骨自身约束栈） */
   setOverrideBasis(name, m) {
     this.bases.set(name, m);
     this.overrides.add(name);
@@ -72,6 +76,7 @@ export class RigEngine {
   /** 求值整棵骨架，返回 P（Map name -> Matrix4，armature space） */
   evaluate() {
     const P = this.P;
+    for (let __pass = 0; __pass < 3; __pass++) {
     for (const name of this.order) {
       const rec = this.bones.get(name);
       const F = rec.parent
@@ -96,6 +101,7 @@ export class RigEngine {
         }
       }
       P.set(name, new Matrix4().multiplyMatrices(F, B));
+    }
     }
     return P;
   }
@@ -372,6 +378,7 @@ export class RigEngine {
     }
     const solved = this.ikDelegate.solve(chain, targetPos, {
       polePos, poleAngle: con.pole_angle, useStretch: con.use_stretch,
+      iterations: con.iterations || 200,
     });
     if (!solved) return B;
     for (let i = 0; i < chainRecs.length; i++) {

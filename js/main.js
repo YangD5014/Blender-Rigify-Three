@@ -4,12 +4,13 @@ import {
   WebGLRenderer, PerspectiveCamera, Scene, Color, Group, Object3D,
   Matrix4, Vector3, Quaternion, LineSegments, LineBasicMaterial, Mesh,
   MeshBasicMaterial, BufferGeometry, BufferAttribute, DoubleSide, Raycaster,
-  HemisphereLight, DirectionalLight, GridHelper, Euler,
+  HemisphereLight, DirectionalLight, GridHelper, Euler, AxesHelper,
+  Texture, Sprite, SpriteMaterial, SphereGeometry, MeshStandardMaterial,
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildRigData, defaultPropValues } from './rigdata.js';
-import { RigEngine } from './engine.js';
+import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520390';
+import { RigEngine } from './engine.js?v=1793520390';
 import { ThreeIkDelegate } from './ikadapter.js';
 import { setupInteraction } from './interact.js';
 import { setupUI } from './ui.js';
@@ -17,6 +18,7 @@ import { applyWorldPose } from './poseApply.js';
 
 const V3 = Vector3;
 const M4 = Matrix4;
+let interaction = null;
 
 async function loadJSON(url) { return (await fetch(url)).json(); }
 
@@ -89,6 +91,37 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.15;
 controls.mouseButtons = { LEFT: 0 /* ROTATE */, MIDDLE: 1 /* DOLLY */, RIGHT: 2 /* PAN */ };
 
+// ---------- XYZ 轴示意图（Blender 同款，右上角） ----------
+const axisGizmoEl = document.getElementById('axisgizmo');
+const axisRenderer = new WebGLRenderer({ antialias: true, alpha: true });
+axisRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+axisRenderer.setSize(80, 80);
+if (axisGizmoEl) axisGizmoEl.appendChild(axisRenderer.domElement);
+const axisScene = new Scene();
+const axisCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+axisCamera.position.set(0, 0, 3);
+axisScene.add(new AxesHelper(1.1));
+function makeAxisLabel(text, color, pos) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 40px sans-serif';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 32, 32);
+  const tex = new Texture(canvas);
+  tex.needsUpdate = true;
+  const mat = new SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sp = new Sprite(mat);
+  sp.position.copy(pos);
+  sp.scale.set(0.35, 0.35, 1);
+  return sp;
+}
+axisScene.add(makeAxisLabel('X', '#ff4444', new V3(1.35, 0, 0)));
+axisScene.add(makeAxisLabel('Y', '#44cc44', new V3(0, 1.35, 0)));
+axisScene.add(makeAxisLabel('Z', '#4488ff', new V3(0, 0, 1.35)));
+
 scene.add(new HemisphereLight(0xbfbfd8, 0x3a3a35, 1.1));
 const sun = new DirectionalLight(0xffffff, 1.6);
 sun.position.set(2, 4, 2);
@@ -129,6 +162,7 @@ modelRoot.traverse((o) => {
 // 场景根级的零散物件（眼球高光等，世界坐标已含 armature 平移）：抵消根平移
 for (const prop of modelRoot.children) {
   if (prop.isMesh && !prop.isSkinnedMesh && !prop.name.startsWith('WGT')) {
+    if (prop.name === 'eyehighlights2' || prop.name === 'NurbsPath038') continue; // 由下方挂接到 head，不抵消
     prop.position.x -= armOffset.x;
     prop.position.y -= armOffset.y;
     prop.position.z -= armOffset.z;
@@ -136,9 +170,13 @@ for (const prop of modelRoot.children) {
   }
 }
 
+// 飘散的根级白色物件（耳部等）：不应用 armOffset 抵消，保持原始位置
+// （无需挂接，避免错误偏移）
+
 // ---------- widget 构建 ----------
 const widgets = [];
 buildWidgets();
+
 
 function buildWidgets() {
   for (const [name, rec] of rigData.bones) {
@@ -209,19 +247,117 @@ function buildWidgets() {
 }
 
 // ---------- 求值与姿态写回 ----------
+function updateMonitor() {
+  const mon = document.getElementById('monitor');
+  if (!mon) return;
+  if (!interaction) { mon.textContent = '未选中'; return; }
+  const sel = interaction.getSelected ? interaction.getSelected() : null;
+  if (!sel) { mon.textContent = '未选中'; return; }
+  const mb = engine.getBasis(sel);
+  const mw = engine.P.get(sel);
+  if (!mb) { mon.textContent = sel + '\\n(无姿态)'; return; }
+  const pb = new V3(); const qb = new Quaternion(); const sb = new V3();
+  mb.decompose(pb, qb, sb);
+  const pw = new V3(); const qw = new Quaternion(); const sw = new V3();
+  if (mw) mw.decompose(pw, qw, sw);
+  mon.innerHTML =
+    `<b style="color:var(--accent)">${sel}</b><br>` +
+    `basis p: x=${pb.x.toFixed(6)} y=${pb.y.toFixed(6)} z=${pb.z.toFixed(6)}<br>` +
+    `basis q: x=${qb.x.toFixed(6)} y=${qb.y.toFixed(6)} z=${qb.z.toFixed(6)} w=${qb.w.toFixed(6)}<br>` +
+    `world p: x=${pw.x.toFixed(6)} y=${pw.y.toFixed(6)} z=${pw.z.toFixed(6)}<br>` +
+    `world q: x=${qw.x.toFixed(6)} y=${qw.y.toFixed(6)} z=${qw.z.toFixed(6)} w=${qw.w.toFixed(6)}`;
+}
 function evaluateAndApply() {
   const P = engine.evaluate();
   applyWorldPose(P, boneByName, rigData);
   modelRoot.updateMatrixWorld(true);
+  updateMonitor();
 }
 evaluateAndApply();
 
 // ---------- 交互 ----------
-const interaction = setupInteraction({
-  renderer, camera, controls, widgets, rigData, engine,
+interaction = setupInteraction({
+  renderer, camera, controls, widgets, rigData, engine, boneByName,
   onChange: evaluateAndApply,
-  onSelection: updateHud,
+  onSelection: (sel) => { updateHud(sel); updateMonitor(); updateRotSliders(sel); },
 });
+
+// ---------- 旋转精细调控（侧边栏） ----------
+const rotSection = document.createElement('div');
+rotSection.className = 'section';
+rotSection.innerHTML = '<h2>选中控制器 · 旋转 (°)</h2>';
+const rotSlidersEl = document.createElement('div');
+rotSection.appendChild(rotSlidersEl);
+const panelEl = document.getElementById('panel');
+const collectionsEl = document.getElementById('collections');
+panelEl.insertBefore(rotSection, collectionsEl);
+
+const rotAxes = ['X', 'Y', 'Z'];
+const rotSliderRows = [];
+for (const ax of rotAxes) {
+  const row = document.createElement('div');
+  row.className = 'slider-row';
+  const lab = document.createElement('label');
+  lab.textContent = `Rotate ${ax}`;
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = -180; input.max = 180; input.step = 1;
+  input.value = 0;
+  const val = document.createElement('span');
+  val.className = 'val';
+  val.textContent = '0';
+  row.append(lab, input, val);
+  rotSlidersEl.appendChild(row);
+  rotSliderRows.push({ ax, input, val });
+}
+
+function basisEuler(name) {
+  const b = engine.getBasis(name);
+  if (!b) return [0, 0, 0];
+  const q = new Quaternion();
+  b.decompose(new Vector3(), q, new Vector3());
+  const eu = new Euler().setFromQuaternion(q, 'XYZ');
+  return [eu.x * 180 / Math.PI, eu.y * 180 / Math.PI, eu.z * 180 / Math.PI];
+}
+
+function applyRotSliders() {
+  const sel = interaction.getSelected ? interaction.getSelected() : null;
+  if (!sel) return;
+  const rec = rigData.bones.get(sel);
+  const b = engine.getBasis(sel);
+  const t = new Vector3(); const s = new Vector3();
+  b.decompose(t, new Quaternion(), s);
+  const vals = rotSliderRows.map((r) => +r.input.value);
+  const q = new Quaternion().setFromEuler(new Euler(
+    vals[0] * Math.PI / 180,
+    vals[1] * Math.PI / 180,
+    vals[2] * Math.PI / 180,
+    'XYZ',
+  ));
+  const newB = new Matrix4().compose(t, q, s);
+  engine.setBasis(sel, newB);
+  evaluateAndApply();
+}
+
+for (const r of rotSliderRows) {
+  r.input.oninput = () => {
+    r.val.textContent = r.input.value;
+    applyRotSliders();
+  };
+}
+
+function updateRotSliders(sel) {
+  if (!sel) {
+    for (const r of rotSliderRows) { r.input.value = 0; r.val.textContent = '0'; r.input.disabled = true; }
+    return;
+  }
+  const eu = basisEuler(sel);
+  for (let i = 0; i < rotSliderRows.length; i++) {
+    rotSliderRows[i].input.value = Math.round(eu[i]);
+    rotSliderRows[i].val.textContent = Math.round(eu[i]);
+    rotSliderRows[i].input.disabled = false;
+  }
+}
 
 // ---------- UI ----------
 setupUI({
@@ -232,6 +368,7 @@ setupUI({
 
 function updateHud(selected) {
   const hud = document.getElementById('hud');
+  if (!hud) return; // 纯净版页面无 HUD
   if (!selected) { hud.innerHTML = '未选中控制器'; return; }
   const rec = rigData.bones.get(selected);
   const props = engine.propValues[selected] || {};
@@ -248,7 +385,8 @@ const widgetBaseColors = widgets.map(w => w.colorNormal.clone());
 function applyTheme(light) {
   lightTheme = light;
   document.body.classList.toggle('light', light);
-  document.getElementById('themeBtn').textContent = light ? '🌙' : '☀';
+  const themeBtnEl = document.getElementById('themeBtn');
+  if (themeBtnEl) themeBtnEl.textContent = light ? '🌙' : '☀';
   scene.background = light ? SCENE_BG.light : SCENE_BG.dark;
   grid.material.color.set(light ? 0x9aa0a8 : 0xffffff);
   axisX.material.color.set(light ? 0xc07070 : 0x9b4a4a);
@@ -264,16 +402,102 @@ function applyTheme(light) {
 }
 function appSelected() { return window.__app ? window.__app.interaction.getSelected() : null; }
 
-document.getElementById('themeBtn').addEventListener('click', () => {
+const themeBtn = document.getElementById('themeBtn');
+if (themeBtn) themeBtn.addEventListener('click', () => {
   applyTheme(!lightTheme);
   localStorage.setItem('petTwinTheme', lightTheme ? 'light' : 'dark');
 });
 applyTheme(lightTheme);
 
+// ---------- 框选物体 ----------
+let boxMode = false;
+const boxBtn = document.createElement('button');
+boxBtn.textContent = '框选物体';
+const toolsEl = document.getElementById('tools');
+if (toolsEl) toolsEl.appendChild(boxBtn);
+const boxOverlay = document.createElement('div');
+boxOverlay.style.cssText = 'position:fixed;border:1px solid #e87d0d;background:rgba(232,125,13,0.15);pointer-events:none;display:none;z-index:20;';
+document.body.appendChild(boxOverlay);
+function setBoxMode(on) {
+  boxMode = on;
+  boxBtn.classList.toggle('active', on);
+  renderer.domElement.style.cursor = on ? 'crosshair' : '';
+  controls.enabled = !on;
+}
+boxBtn.onclick = () => setBoxMode(!boxMode);
+addEventListener('keydown', (ev) => {
+  if (ev.key.toLowerCase() === 'b' && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+    if (!dragging) setBoxMode(!boxMode);
+  }
+});
+let boxStart = null;
+let dragging = false;
+renderer.domElement.addEventListener('pointerdown', (ev) => {
+  if (!boxMode) return;
+  dragging = true;
+  boxStart = { x: ev.clientX, y: ev.clientY };
+  boxOverlay.style.left = ev.clientX + 'px';
+  boxOverlay.style.top = ev.clientY + 'px';
+  boxOverlay.style.width = '0px';
+  boxOverlay.style.height = '0px';
+  boxOverlay.style.display = 'block';
+  ev.stopPropagation();
+  ev.stopImmediatePropagation();
+}, true);
+renderer.domElement.addEventListener('pointermove', (ev) => {
+  if (!boxMode || !dragging || !boxStart) return;
+  const x = Math.min(boxStart.x, ev.clientX);
+  const y = Math.min(boxStart.y, ev.clientY);
+  const w = Math.abs(ev.clientX - boxStart.x);
+  const h = Math.abs(ev.clientY - boxStart.y);
+  boxOverlay.style.left = x + 'px';
+  boxOverlay.style.top = y + 'px';
+  boxOverlay.style.width = w + 'px';
+  boxOverlay.style.height = h + 'px';
+  ev.stopPropagation();
+  ev.stopImmediatePropagation();
+}, true);
+renderer.domElement.addEventListener('pointerup', (ev) => {
+  if (!boxMode || !dragging || !boxStart) return;
+  dragging = false;
+  const x1 = boxStart.x, y1 = boxStart.y;
+  const x2 = ev.clientX, y2 = ev.clientY;
+  boxOverlay.style.display = 'none';
+  const names = new Set();
+  const rect = renderer.domElement.getBoundingClientRect();
+  modelRoot.traverse((o) => {
+    if (!o.isMesh || !o.name) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const bs = o.geometry.boundingSphere;
+    if (!bs) return;
+    const center = bs.center.clone().applyMatrix4(o.matrixWorld);
+    const proj = center.clone().project(camera);
+    const sx = (proj.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-proj.y * 0.5 + 0.5) * rect.height + rect.top;
+    if (sx >= Math.min(x1, x2) && sx <= Math.max(x1, x2) &&
+        sy >= Math.min(y1, y2) && sy <= Math.max(y1, y2)) {
+      names.add(o.name);
+    }
+  });
+  const mon = document.getElementById('monitor');
+  if (mon) mon.textContent = names.size ? [...names].join('\\n') : '未框选到物体';
+  boxStart = null;
+  setBoxMode(false);
+  ev.stopPropagation();
+  ev.stopImmediatePropagation();
+}, true);
+
 // ---------- 渲染循环 ----------
 renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);
+  // XYZ 轴示意图同步相机朝向
+  const q = camera.quaternion;
+  const p = new V3(0, 0, 3).applyQuaternion(q);
+  axisCamera.position.copy(p);
+  axisCamera.quaternion.copy(q);
+  axisCamera.updateMatrixWorld();
+  axisRenderer.render(axisScene, axisCamera);
 });
 
 addEventListener('resize', () => {
@@ -290,7 +514,6 @@ window.__app = {
   evaluateAndApply, interaction,
   resetPose() {
     engine.resetBases();
-    for (const [n, rec] of rigData.bones) engine.setBasis(n, new Matrix4());
     evaluateAndApply();
   },
   /** 侧视/正视机位 */

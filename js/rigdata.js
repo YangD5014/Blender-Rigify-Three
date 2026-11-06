@@ -117,10 +117,11 @@ function topoSort(bones) {
   for (const rec of bones.values()) {
     const p = new Set();
     const t = new Set();
-    if (rec.parent) p.add(rec.parent);
+    // MCH-upper_arm_ik2 作为 IK2 链根，使用上一帧的父骨姿态（Blender 在此断环）
+    if (rec.parent && !rec.name.startsWith('MCH-upper_arm_ik2.')) p.add(rec.parent);
     for (const c of rec.constraints) {
-      // _track 骨的 DAMPED_TRACK target 边丢弃（读上一帧值，Blender 在此断环）
-      if (rec.name.includes('_track') && c.type === 'DAMPED_TRACK') continue;
+      // 保留 _track 骨的 DAMPED_TRACK target 边，使其等待 IK2（Blender depsgraph 顺序 ctrl->IK2->track）
+      // (no drop)
       if (c.subtarget && bones.has(c.subtarget)) t.add(c.subtarget);
       if (c.type === 'IK' && c.pole_subtarget && bones.has(c.pole_subtarget)) t.add(c.pole_subtarget);
       if (c.type === 'ARMATURE') {

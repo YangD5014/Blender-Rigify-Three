@@ -72,6 +72,7 @@ python3 -m http.server 8791
 - **IK / FK 滑杆**：`IK_FK`、`pole_vector`、`IK_Stretch`、`neck/head/tail_follow` 等，
   直接驱动 Blender 自定义属性 + 驱动器表达式。
 - **集合可见性**：按 Rigify 骨骼集合（Spine / Leg.L (IK) / Face …）开关 widget。
+- **旋转精细调控**：侧边栏提供 X/Y/Z 旋转滑杆，选中控制器后可微调旋转角度。
 
 ## 数值校验（可选）
 

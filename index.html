@@ -33,6 +33,7 @@
     background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; z-index: 10;
     backdrop-filter: blur(4px);
+    overflow: hidden;
   }
   #panel h1 {
     font-size: 13px; padding: 10px 12px 8px; color: var(--accent); font-weight: 600;
@@ -53,7 +54,7 @@
   }
   #presets button:hover, #tools button:hover { background: var(--btn-hover-bg); color: var(--btn-hover-text); }
   #presets button.active, #tools button.active { background: var(--accent); color: var(--accent-press); border-color: var(--accent-border); }
-  #collections { overflow-y: auto; flex: 1; }
+  #collections { overflow-y: auto; flex: 1; min-height: 0; }
   .coll-row { display: flex; align-items: center; padding: 2px 12px; cursor: pointer; border-radius: 2px; }
   .coll-row:hover { background: var(--coll-hover); }
   .coll-row input { margin-right: 6px; accent-color: #e87d0d; }
@@ -63,8 +64,13 @@
   .slider-row label { width: 118px; color: var(--slider-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .slider-row input[type=range] { flex: 1; accent-color: #4772b3; }
   .slider-row .val { width: 34px; text-align: right; color: var(--slider-val); font-size: 10px; }
+  #axisgizmo {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    width: 80px; height: 80px; pointer-events: none;
+  }
+  #axisgizmo canvas { width: 100%; height: 100%; display: block; }
   #hud {
-    position: absolute; top: 10px; right: 12px; z-index: 10;
+    position: absolute; top: 10px; right: 100px; z-index: 10;
     background: var(--hud-bg); padding: 6px 10px; border-radius: 4px;
     font-size: 11px; color: var(--hud-text); pointer-events: none; line-height: 1.6;
   }
@@ -101,9 +107,15 @@
     <h2>显示</h2>
     <div id="tools"></div>
   </div>
+  <div class="section" id="monitor-section">
+    <h2>选中控制器 · 四元数</h2>
+    <div id="monitor" style="font-family: monospace; font-size: 10px; color: var(--text-dim); line-height: 1.5; word-break: break-all;">未选中</div>
+  </div>
   <div id="collections"></div>
 </div>
-<div id="hud"></div>
+<div id="axisgizmo" style="position:absolute; top:10px; right:12px; z-index:11; width:80px; height:80px; pointer-events:none;"></div>
+<div id="hud" style="top:110px;"></div>
+<div id="axisgizmo"></div>
 <div id="hintbar">
   <b>选中控制器后按 G</b> 移动（跟随鼠标）· 按 <b>R</b> 旋转 · 移动中按 <b>X/Y/Z</b> 轴向锁定 ·
   <b>左键/Enter</b> 确认 · <b>Esc/右键</b> 取消 · <b>左键拖空处</b> 旋转视图 · <b>右键拖空处</b> 平移 · <b>滚轮</b> 缩放
@@ -119,6 +131,6 @@
   }
 }
 </script>
-<script type="module" src="./js/main.js?v=1793520300"></script>
+<script type="module" src="./js/main.js?v=1793520390"></script>
 </body>
 </html>

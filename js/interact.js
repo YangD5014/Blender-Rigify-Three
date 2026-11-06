@@ -55,7 +55,7 @@ function findIkDragChains(rigData) {
   return result;
 }
 
-export function setupInteraction({ renderer, camera, controls, widgets, rigData, engine, boneByName, onChange, onSelection }) {
+export function setupInteraction({ renderer, camera, controls, widgets, rigData, engine, boneByName, gizmo, onChange, onSelection }) {
   const raycaster = new Raycaster();
   raycaster.params.Line = { threshold: 0.03 };
   raycaster.params.Mesh = {};
@@ -71,6 +71,13 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
   let hovered = null;
   let selected = null;
   let drag = null; // { widget, mode:'move'|'rotate', modal, plane, startHit, startP, startBasis, lockAxis, startAngle, screenCenter }
+  function updateGizmo(w) {
+    if (!gizmo) return;
+    if (!w) { gizmo.visible = false; return; }
+    const head = new Vector3().setFromMatrixPosition(w.bone.matrixWorld);
+    gizmo.position.copy(head);
+    gizmo.visible = true;
+  }
   let lastMouse = null; // 视口坐标，供 G/R 模态起点使用
 
   // 拖尾端手柄 = 尾部 IK 目标（见 findIkDragChains）
@@ -172,6 +179,7 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
         startAngle: Math.atan2(mouse.y - worldToScreen(head, rect).y, mouse.x - worldToScreen(head, rect).x),
         startP: engine.P.get(w.name).clone(),
         startBasis: engine.getBasis(w.name).clone(),
+        lockAxis: null,
       };
     }
   }
@@ -262,15 +270,40 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
     }
     const isRotateButton = ev.button === 2; // 右键 = 旋转
     if (ev.button !== 0 && ev.button !== 2) return; // 中键 → OrbitControls 缩放
+    // 球状旋转控制器拾取：点击球体直接启动旋转
+    if (gizmo && gizmo.visible && selected) {
+      const rect = dom.getBoundingClientRect();
+      const ndc = { x: ((ev.clientX - rect.left) / rect.width) * 2 - 1, y: -((ev.clientY - rect.top) / rect.height) * 2 + 1 };
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObject(gizmo);
+      if (hits.length) {
+        releaseIkChain(selected.name);
+        controls.enabled = false;
+        const head = new Vector3().setFromMatrixPosition(selected.bone.matrixWorld);
+        const r = dom.getBoundingClientRect();
+        drag = {
+          widget: selected, mode: 'rotate', viewDir: new Vector3().set(0, 0, -1).applyQuaternion(camera.quaternion).normalize(),
+          center: head.clone(),
+          screenCenter: worldToScreen(head, r),
+          startAngle: Math.atan2(ev.clientY - worldToScreen(head, r).y, ev.clientX - worldToScreen(head, r).x),
+          startP: engine.P.get(selected.name).clone(),
+          startBasis: engine.getBasis(selected.name).clone(),
+          lockAxis: null,
+        };
+        try { dom.setPointerCapture(ev.pointerId); } catch {}
+        return;
+      }
+    }
     const w = pick(ev);
     if (!w) {
-      if (ev.button === 0 && selected) { setVisual(selected, 'normal'); selected = null; onSelection(null); }
+      if (ev.button === 0 && selected) { setVisual(selected, 'normal'); selected = null; onSelection(null); updateGizmo(null); }
       return; // 空处：左键旋转视图 / 右键平移（OrbitControls 接管）
     }
     if (selected && selected !== w) setVisual(selected, 'normal');
     selected = w;
     setVisual(w, 'selected');
     onSelection(w.name);
+    updateGizmo(w);
     controls.enabled = false; // 挂住 widget 时屏蔽视图操作
     const isRotate = isRotateButton || ev.shiftKey;
     if (isRotate) releaseIkChain(w.name); // 旋转主控 → 回到主控旋转语义
@@ -352,13 +385,17 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
         : rec.rest.clone();
       engine.setBasis(w.name, new Matrix4().copy(F).invert().multiply(Pnew));
     } else {
-      // 旋转：屏幕角度绕视图轴
+      // 旋转：屏幕角度绕视图轴（或轴锁指定的全局轴）
       const rect = dom.getBoundingClientRect();
       const c = drag.screenCenter;
       const a = Math.atan2(ev.clientY - c.y, ev.clientX - c.x);
       let dA = a - drag.startAngle;
-      // 屏幕角 → 世界角（视图轴指向观察者时为正）
-      const q = new Quaternion().setFromAxisAngle(drag.viewDir, -dA);
+      let axis = drag.viewDir.clone();
+      if (drag.lockAxis === 'x') axis.set(1, 0, 0);
+      else if (drag.lockAxis === 'y') axis.set(0, 0, -1);
+      else if (drag.lockAxis === 'z') axis.set(0, 1, 0);
+      // 屏幕角 → 世界角
+      const q = new Quaternion().setFromAxisAngle(axis, -dA);
       const head = new Vector3().setFromMatrixPosition(drag.startP);
       const R = new Matrix4().makeRotationFromQuaternion(q);
       const Pnew = new Matrix4().makeTranslation(head.x, head.y, head.z)
@@ -390,10 +427,12 @@ export function setupInteraction({ renderer, camera, controls, widgets, rigData,
       else if (k === 'r') startModal('rotate');
       return;
     }
-    if (drag.mode === 'move' && ['x', 'y', 'z'].includes(ev.key.toLowerCase())) {
+    if (['x', 'y', 'z'].includes(ev.key.toLowerCase())) {
       const k = ev.key.toLowerCase();
-      drag.lockAxis = drag.lockAxis === k ? null : k;
-      ev.preventDefault();
+      if (drag.mode === 'move' || drag.mode === 'rotate') {
+        drag.lockAxis = drag.lockAxis === k ? null : k;
+        ev.preventDefault();
+      }
     } else if (ev.key === 'Escape') {
       if (drag.modal) endModal(false);
       else {

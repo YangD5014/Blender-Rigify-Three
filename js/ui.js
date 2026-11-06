@@ -29,14 +29,17 @@ export function setupUI({ rigData, engine, posesJson, widgets, onPreset, onPropC
 
   // ---- 姿态预设 ----
   const presetsEl = document.getElementById('presets');
-  for (const [key, label] of PRESET_NAMES) {
+  if (presetsEl) for (const [key, label] of PRESET_NAMES) {
     if (!poses.has(key)) continue;
     const btn = document.createElement('button');
     btn.textContent = label;
     btn.onclick = () => {
       const pose = poses.get(key);
       engine.resetBases();
-      for (const [n, f] of Object.entries(pose.basis)) engine.setBasis(n, flatToM4(f));
+      for (const [n, f] of Object.entries(pose.basis)) {
+        if (n === 'hand_heel_ik.L' || n === 'hand_heel_ik.R') continue; // 保留默认 67° 旋转
+        engine.setBasis(n, flatToM4(f));
+      }
       const props = defaultPropValues(rigData.bones);
       for (const [bone, kv] of Object.entries(pose.props || {})) {
         props[bone] = { ...(props[bone] || {}) };
@@ -54,6 +57,7 @@ export function setupUI({ rigData, engine, posesJson, widgets, onPreset, onPropC
   // ---- IK/FK 滑杆 ----
   const slidersEl = document.getElementById('sliders');
   const sliderRows = []; // {propBone, prop, input, val}
+  if (slidersEl) {
   for (const [recName, rec] of rigData.bones) {
     if (!engine.propValues[recName]) continue;
     for (const [prop, label, min, max] of SLIDER_PROPS) {
@@ -83,6 +87,7 @@ export function setupUI({ rigData, engine, posesJson, widgets, onPreset, onPropC
   }
   // 若没有任何 IK_FK 骨骼（理论不会），滑杆区隐藏
   if (!sliderRows.length) slidersEl.parentElement.style.display = 'none';
+  }
 
   function refreshSliders() {
     for (const r of sliderRows) {
@@ -94,6 +99,7 @@ export function setupUI({ rigData, engine, posesJson, widgets, onPreset, onPropC
 
   // ---- 骨骼集合可见性 ----
   const collEl = document.getElementById('collections');
+  if (collEl) {
   const collCounts = new Map();
   for (const w of widgets) {
     for (const c of w.rec.collections || []) collCounts.set(c, (collCounts.get(c) || 0) + 1);
@@ -125,6 +131,7 @@ export function setupUI({ rigData, engine, posesJson, widgets, onPreset, onPropC
     ct.textContent = count;
     row.append(cb, nm, ct);
     collEl.appendChild(row);
+  }
   }
 }
 
