@@ -221,7 +221,11 @@ export function defaultPropValues(bones) {
   for (const rec of bones.values()) {
     const vals = {};
     for (const [k, v] of Object.entries(rec.props)) {
-      if (typeof v === 'number' || typeof v === 'boolean') vals[k] = typeof v === 'boolean' ? (v ? 1 : 0) : v;
+      if (typeof v === 'number' || typeof v === 'boolean') {
+        let val = typeof v === 'boolean' ? (v ? 1 : 0) : v;
+        if (k === 'FK_limb_follow') val = 1; // FK 控制器默认跟随骨骼运动
+        vals[k] = val;
+      }
     }
     if (Object.keys(vals).length) props[rec.name] = vals;
   }
