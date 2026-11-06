@@ -9,8 +9,8 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520430';
-import { RigEngine } from './engine.js?v=1793520430';
+import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520440';
+import { RigEngine } from './engine.js?v=1793520440';
 import { ThreeIkDelegate } from './ikadapter.js';
 import { setupInteraction } from './interact.js';
 import { setupUI } from './ui.js';
@@ -414,6 +414,23 @@ try {
     updateCamInfo();
   }
 } catch {}
+
+// ---------- 一键隐藏所有 widget ----------
+const hideSection = document.createElement('div');
+hideSection.className = 'section';
+const hideBtn = document.createElement('button');
+hideBtn.textContent = '隐藏所有 Widget';
+hideBtn.style.cssText = 'padding:4px 10px;background:var(--btn-bg);color:var(--btn-text);border:1px solid var(--border);border-radius:3px;cursor:pointer;font-size:11px;';
+let widgetsHidden = false;
+hideBtn.onclick = () => {
+  widgetsHidden = !widgetsHidden;
+  for (const w of widgets) w.holder.visible = !widgetsHidden;
+  hideBtn.textContent = widgetsHidden ? '显示所有 Widget' : '隐藏所有 Widget';
+};
+hideSection.appendChild(hideBtn);
+const panelEl3 = document.getElementById('panel');
+const collectionsEl3 = document.getElementById('collections');
+panelEl3.insertBefore(hideSection, collectionsEl3);
 
 // ---------- UI ----------
 setupUI({
