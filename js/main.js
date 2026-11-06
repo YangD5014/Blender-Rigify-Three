@@ -9,8 +9,8 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520400';
-import { RigEngine } from './engine.js?v=1793520400';
+import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520410';
+import { RigEngine } from './engine.js?v=1793520410';
 import { ThreeIkDelegate } from './ikadapter.js';
 import { setupInteraction } from './interact.js';
 import { setupUI } from './ui.js';
@@ -78,7 +78,7 @@ scene.add(modelRoot);
 
 const camera = new PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
 // 猫面朝 glTF +Z，身体跨度约 z -0.5..+1.6 —— 默认前侧 3/4 机位
-camera.position.set(2.0, 0.9, 3.4);
+camera.position.set(5.1595, 2.3524, 3.2293);
 
 const renderer = new WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
@@ -86,7 +86,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.getElementById('viewport').appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.05, 0.2);
+controls.target.set(-0.0722, 0.5570, 0.0334);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
 controls.mouseButtons = { LEFT: 0 /* ROTATE */, MIDDLE: 1 /* DOLLY */, RIGHT: 2 /* PAN */ };
