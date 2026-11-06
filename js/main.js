@@ -9,8 +9,8 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520390';
-import { RigEngine } from './engine.js?v=1793520390';
+import { buildRigData, defaultPropValues } from './rigdata.js?v=1793520400';
+import { RigEngine } from './engine.js?v=1793520400';
 import { ThreeIkDelegate } from './ikadapter.js';
 import { setupInteraction } from './interact.js';
 import { setupUI } from './ui.js';
@@ -358,6 +358,62 @@ function updateRotSliders(sel) {
     rotSliderRows[i].input.disabled = false;
   }
 }
+
+// ---------- 相机参数记录（侧边栏，动态更新） ----------
+const camSection = document.createElement('div');
+camSection.className = 'section';
+camSection.innerHTML = '<h2>相机参数（实时）</h2>';
+const camInfo = document.createElement('div');
+camInfo.style.cssText = 'font-family:monospace;font-size:10px;color:var(--text-dim);line-height:1.6;word-break:break-all;';
+camSection.appendChild(camInfo);
+const camBtns = document.createElement('div');
+camBtns.style.cssText = 'margin-top:6px;display:flex;gap:4px;';
+const copyCamBtn = document.createElement('button');
+copyCamBtn.textContent = '复制参数';
+copyCamBtn.style.cssText = 'padding:3px 8px;background:var(--btn-bg);color:var(--btn-text);border:1px solid var(--border);border-radius:3px;cursor:pointer;font-size:11px;';
+const saveCamBtn = document.createElement('button');
+saveCamBtn.textContent = '设为初始视角';
+saveCamBtn.style.cssText = copyCamBtn.style.cssText;
+camBtns.append(copyCamBtn, saveCamBtn);
+camSection.appendChild(camBtns);
+const panelEl2 = document.getElementById('panel');
+const collectionsEl2 = document.getElementById('collections');
+panelEl2.insertBefore(camSection, collectionsEl2);
+
+function updateCamInfo() {
+  const p = camera.position;
+  const t = controls.target;
+  camInfo.innerHTML =
+    `position: [${p.x.toFixed(4)}, ${p.y.toFixed(4)}, ${p.z.toFixed(4)}]<br>` +
+    `target:   [${t.x.toFixed(4)}, ${t.y.toFixed(4)}, ${t.z.toFixed(4)}]`;
+}
+controls.addEventListener('change', updateCamInfo);
+updateCamInfo();
+
+copyCamBtn.onclick = () => {
+  const p = camera.position, t = controls.target;
+  const txt = `camera.position.set(${p.x.toFixed(4)}, ${p.y.toFixed(4)}, ${p.z.toFixed(4)});\ncontrols.target.set(${t.x.toFixed(4)}, ${t.y.toFixed(4)}, ${t.z.toFixed(4)});`;
+  navigator.clipboard.writeText(txt).then(() => { copyCamBtn.textContent = '已复制'; setTimeout(() => copyCamBtn.textContent = '复制参数', 1200); });
+};
+saveCamBtn.onclick = () => {
+  const p = camera.position, t = controls.target;
+  localStorage.setItem('petTwinCamPos', JSON.stringify([p.x, p.y, p.z]));
+  localStorage.setItem('petTwinCamTarget', JSON.stringify([t.x, t.y, t.z]));
+  saveCamBtn.textContent = '已保存'; setTimeout(() => saveCamBtn.textContent = '设为初始视角', 1200);
+};
+
+// 应用已保存的初始视角
+try {
+  const sp = JSON.parse(localStorage.getItem('petTwinCamPos'));
+  const st = JSON.parse(localStorage.getItem('petTwinCamTarget'));
+  if (Array.isArray(sp) && Array.isArray(st)) {
+    camera.position.set(sp[0], sp[1], sp[2]);
+    controls.target.set(st[0], st[1], st[2]);
+    controls.update();
+    camera.updateMatrixWorld(true);
+    updateCamInfo();
+  }
+} catch {}
 
 // ---------- UI ----------
 setupUI({
