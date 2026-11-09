@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PetFusion · 手机 IMU 控制</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #111; color: #eee; padding: 16px; }
+  h1 { font-size: 18px; color: #e87d0d; margin-bottom: 12px; }
+  .card { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  label { color: #aaa; font-size: 13px; }
+  select, input, button { padding: 8px 10px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: #eee; font-size: 14px; }
+  button { background: #e87d0d; border: none; color: #fff; }
+  button.secondary { background: #3d3d3d; }
+  button.danger { background: #e53935; }
+  .status { font-size: 13px; color: #aaa; }
+  .status.on { color: #4caf50; }
+  .vals { font-family: monospace; font-size: 12px; line-height: 1.6; color: #9cdcfe; }
+  .hint { color: #888; font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>🐾 PetFusion 手机 IMU 控制</h1>
+
+<div class="card">
+  <div class="row"><span class="status" id="wsStatus">WebSocket: 未连接</span></div>
+  <div class="row">
+    <label>WS 地址</label>
+    <input id="wsUrl" type="text" style="flex:1;" value="">
+  </div>
+  <div class="row">
+    <button id="btnConnect">连接</button>
+    <button class="secondary" id="btnDisconnect">断开</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <label>控制对象</label>
+    <select id="jointSel">
+      <option value="torso">torso（躯干）</option>
+      <option value="neck">neck（颈部）</option>
+      <option value="head">head（头部）</option>
+      <option value="tail_master.001">tail_master.001（尾巴）</option>
+    </select>
+    <input id="jointCustom" type="text" placeholder="或输入关节名" style="flex:1;">
+  </div>
+  <div class="row">
+    <button id="btnUseCustom">使用自定义</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <button id="btnPerm">请求传感器权限</button>
+    <button id="btnStart" class="secondary">开始推流</button>
+    <button id="btnStop" class="danger">停止</button>
+  </div>
+  <div class="status" id="imuStatus">IMU: 未启动</div>
+  <div class="vals" id="angles">alpha=0 beta=0 gamma=0</div>
+  <div class="vals" id="quat">q=(0,0,0,1)</div>
+  <div class="hint">需要 HTTPS 才能读取 IMU。请用手机浏览器打开本页面并允许传感器权限。</div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const defaultUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':2001';
+  $('wsUrl').value = defaultUrl;
+
+  let ws = null;
+  let streaming = false;
+  let lastSend = 0;
+  let selectedJoint = 'torso';
+
+  function setStatus(text, on) {
+    const el = $('wsStatus');
+    el.textContent = 'WebSocket: ' + text;
+    el.classList.toggle('on', !!on);
+  }
+
+  function connect() {
+    const url = $('wsUrl').value.trim();
+    try { ws = new WebSocket(url); } catch (e) { setStatus('失败', false); return; }
+    ws.onopen = () => setStatus('已连接', true);
+    ws.onclose = () => setStatus('已断开', false);
+    ws.onerror = () => setStatus('错误', false);
+  }
+  function disconnect() { if (ws) ws.close(); ws = null; }
+
+  $('btnConnect').onclick = connect;
+  $('btnDisconnect').onclick = disconnect;
+
+  $('jointSel').onchange = () => { selectedJoint = $('jointSel').value; };
+  $('btnUseCustom').onclick = () => {
+    const v = $('jointCustom').value.trim();
+    if (v) { selectedJoint = v; $('imuStatus').textContent = '已选择关节: ' + v; }
+  };
+
+  function deg2rad(d){ return d * Math.PI / 180; }
+  function orientationToQuat(alpha, beta, gamma) {
+    const _x = deg2rad(beta || 0);
+    const _y = deg2rad(gamma || 0);
+    const _z = deg2rad(alpha || 0);
+    const cX = Math.cos(_x/2), cY = Math.cos(_y/2), cZ = Math.cos(_z/2);
+    const sX = Math.sin(_x/2), sY = Math.sin(_y/2), sZ = Math.sin(_z/2);
+    return {
+      w: cX*cY*cZ + sX*sY*sZ,
+      x: sX*cY*cZ - cX*sY*sZ,
+      y: cX*sY*cZ + sX*cY*sZ,
+      z: cX*cY*sZ - sX*sY*cZ,
+    };
+  }
+
+  async function requestPermission() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const res = await DeviceOrientationEvent.requestPermission();
+        $('imuStatus').textContent = '权限: ' + res;
+        return res === 'granted';
+      } catch (e) {
+        $('imuStatus').textContent = '权限请求失败: ' + e;
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function handleOrientation(ev) {
+    if (!streaming) return;
+    const now = Date.now();
+    if (now - lastSend < 33) return;
+    lastSend = now;
+    const alpha = ev.alpha, beta = ev.beta, gamma = ev.gamma;
+    $('angles').textContent = `alpha=${(alpha||0).toFixed(1)} beta=${(beta||0).toFixed(1)} gamma=${(gamma||0).toFixed(1)}`;
+    const q = orientationToQuat(alpha, beta, gamma);
+    $('quat').textContent = `q=(${q.x.toFixed(3)},${q.y.toFixed(3)},${q.z.toFixed(3)},${q.w.toFixed(3)})`;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'set', joint: selectedJoint, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, space: 'basis' }));
+    }
+  }
+
+  $('btnPerm').onclick = async () => {
+    const ok = await requestPermission();
+    if (ok) $('imuStatus').textContent = 'IMU: 权限已获取，可开始推流';
+  };
+  $('btnStart').onclick = () => {
+    streaming = true;
+    window.addEventListener('deviceorientation', handleOrientation);
+    $('imuStatus').textContent = 'IMU: 推流中 → ' + selectedJoint;
+  };
+  $('btnStop').onclick = () => {
+    streaming = false;
+    window.removeEventListener('deviceorientation', handleOrientation);
+    $('imuStatus').textContent = 'IMU: 已停止';
+  };
+
+  setTimeout(connect, 500);
+</script>
+</body>
+</html>
