@@ -290,7 +290,7 @@ const rotSlidersEl = document.createElement('div');
 rotSection.appendChild(rotSlidersEl);
 const panelEl = document.getElementById('panel');
 const collectionsEl = document.getElementById('collections');
-panelEl.insertBefore(rotSection, collectionsEl);
+if (panelEl && collectionsEl) panelEl.insertBefore(rotSection, collectionsEl);
 
 const rotAxes = ['X', 'Y', 'Z'];
 const rotSliderRows = [];
@@ -378,7 +378,7 @@ camBtns.append(copyCamBtn, saveCamBtn);
 camSection.appendChild(camBtns);
 const panelEl2 = document.getElementById('panel');
 const collectionsEl2 = document.getElementById('collections');
-panelEl2.insertBefore(camSection, collectionsEl2);
+if (panelEl2 && collectionsEl2) panelEl2.insertBefore(camSection, collectionsEl2);
 
 function updateCamInfo() {
   const p = camera.position;
@@ -430,7 +430,7 @@ hideBtn.onclick = () => {
 hideSection.appendChild(hideBtn);
 const panelEl3 = document.getElementById('panel');
 const collectionsEl3 = document.getElementById('collections');
-panelEl3.insertBefore(hideSection, collectionsEl3);
+if (panelEl3 && collectionsEl3) panelEl3.insertBefore(hideSection, collectionsEl3);
 
 // ---------- UI ----------
 setupUI({
@@ -561,6 +561,68 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 }, true);
 
 // ---------- 渲染循环 ----------
+
+// ---------- WebSocket 实时控制 ----------
+// 当页面启用 __WS_ENABLED 时，连接 websocket 并用收到的关节四元数驱动骨骼 basis。
+function __wsSetJointBasis(st) {
+  if (!st || !st.joint) return;
+  const joint = st.joint;
+  if (!rigData.bones.has(joint)) return;
+  const rec = rigData.bones.get(joint);
+  const q = st.quaternion || st.q || st.rotation;
+  if (!q) return;
+  const qx = +q.x, qy = +q.y, qz = +q.z, qw = (q.w !== undefined ? +q.w : 1);
+  const quat = new Quaternion(qx, qy, qz, qw);
+  const space = st.space || 'basis';
+  let pos = null;
+  if (st.position || st.p) {
+    const pp = st.position || st.p;
+    pos = new Vector3(+pp.x, +pp.y, +pp.z);
+  }
+  let m;
+  if (space === 'world') {
+    const parentP = rec.parent ? (engine.P.get(rec.parent) || rigData.bones.get(rec.parent).rest) : null;
+    const F = rec.parent ? new Matrix4().multiplyMatrices(parentP, rec.restLocal) : rec.rest.clone();
+    const pp = pos || new Vector3().setFromMatrixPosition(engine.P.get(joint) || rec.rest);
+    const sc = new Vector3(1, 1, 1);
+    const Pdes = new Matrix4().compose(pp, quat, sc);
+    m = new Matrix4().copy(F).invert().multiply(Pdes);
+  } else {
+    const t = pos || new Vector3();
+    const sc = new Vector3(1, 1, 1);
+    m = new Matrix4().compose(t, quat, sc);
+  }
+  engine.setBasis(joint, m);
+}
+
+if (window.__WS_ENABLED) {
+  const __wsUrl = window.__WS_URL || (`ws://${location.hostname}:2001`);
+  let __ws = null;
+  let __wsRetry = 0;
+  function __wsConnect() {
+    try { __ws = new WebSocket(__wsUrl); } catch (e) { setTimeout(__wsConnect, 2000); return; }
+    __ws.onopen = () => { __wsRetry = 0; console.log('[WS] connected', __wsUrl); };
+    __ws.onmessage = (ev) => {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (!msg) return;
+      if (msg.type === 'state') { __wsSetJointBasis(msg); evaluateAndApply(); }
+      else if (msg.type === 'state_multi') {
+        if (msg.joints) for (const j in msg.joints) __wsSetJointBasis(msg.joints[j]);
+        evaluateAndApply();
+      } else if (msg.type === 'snapshot') {
+        if (msg.joints) for (const j in msg.joints) __wsSetJointBasis(msg.joints[j]);
+        evaluateAndApply();
+      }
+    };
+    __ws.onclose = () => { __wsRetry++; setTimeout(__wsConnect, Math.min(10000, 1000 * __wsRetry)); };
+    __ws.onerror = () => { try { __ws.close(); } catch (e) {} };
+  }
+  __wsConnect();
+  // 暴露发送接口，便于控制台/外部调用
+  window.__wsSend = (obj) => { if (__ws && __ws.readyState === 1) __ws.send(JSON.stringify(obj)); };
+}
+
 renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetFusion · 关节 WebSocket 控制台</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #1e1e1e; --panel: #262626; --border: #333; --text: #d4d4d4;
+    --accent: #e87d0d; --dim: #888; --ok: #4caf50; --err: #e53935;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 13px; }
+  .wrap { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
+  .side { background: var(--panel); border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+  .main { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 16px; color: var(--accent); margin-bottom: 12px; }
+  h2 { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 6px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  .row label { width: 70px; color: var(--dim); }
+  input, select, textarea, button {
+    background: #333; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 12px;
+  }
+  input[type=text], input[type=number] { flex: 1; }
+  button { cursor: pointer; background: var(--accent); color: #fff; border: none; }
+  button.secondary { background: #3d3d3d; }
+  button.danger { background: var(--err); }
+  .status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--err); margin-right: 6px; }
+  .status.on { background: var(--ok); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .log { font-family: monospace; font-size: 11px; background: #111; border: 1px solid var(--border); border-radius: 4px; padding: 8px; height: 260px; overflow-y: auto; white-space: pre-wrap; }
+  .joint-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; }
+  .joint-item { padding: 4px 6px; cursor: pointer; border-radius: 3px; }
+  .joint-item:hover { background: #333; }
+  .joint-item.active { background: var(--accent); color: #fff; }
+  .hint { color: var(--dim); font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="side">
+    <h1>🐾 PetFusion 控制台</h1>
+    <div class="row"><span class="status" id="statusDot"></span><span id="statusText">未连接</span></div>
+    <h2>连接</h2>
+    <div class="row"><label>WS URL</label><input id="wsUrl" type="text" value=""></div>
+    <div class="row">
+      <button id="btnConnect">连接</button>
+      <button class="secondary" id="btnDisconnect">断开</button>
+    </div>
+    <h2>关节列表</h2>
+    <div class="joint-list" id="jointList"></div>
+    <div class="row"><input id="jointInput" type="text" placeholder="或输入关节名，如 torso"></div>
+    <div class="hint">支持任意骨骼名；torso 为躯干主控。</div>
+    <h2>快捷关节</h2>
+    <div class="row" style="flex-wrap:wrap;">
+      <button class="secondary" data-joint="torso">torso</button>
+      <button class="secondary" data-joint="neck">neck</button>
+      <button class="secondary" data-joint="head">head</button>
+      <button class="secondary" data-joint="tail_master.001">tail_master.001</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="card">
+      <h2 style="margin-top:0;">发送关节四元数</h2>
+      <div class="row"><label>关节</label><input id="sendJoint" type="text" value="torso"></div>
+      <div class="row"><label>空间</label>
+        <select id="sendSpace">
+          <option value="basis">basis（骨局部，相对 rest）</option>
+          <option value="world">world（世界坐标）</option>
+        </select>
+      </div>
+      <div class="grid2">
+        <div class="row"><label>qx</label><input id="qx" type="number" step="0.0001" value="0"></div>
+        <div class="row"><label>qy</label><input id="qy" type="number" step="0.0001" value="0"></div>
+        <div class="row"><label>qz</label><input id="qz" type="number" step="0.0001" value="0"></div>
+        <div class="row"><label>qw</label><input id="qw" type="number" step="0.0001" value="1"></div>
+      </div>
+      <div class="row">
+        <button id="btnSend">发送</button>
+        <button class="secondary" id="btnRest">发送 rest (单位四元数)</button>
+        <button class="secondary" id="btnList">请求关节列表</button>
+      </div>
+      <div class="hint">四元数将按所选空间应用。basis 空间与 3D 页面 monitor 中的 basis q 一致。</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">多关节批量 (JSON)</h2>
+      <textarea id="batchJson" rows="8" style="width:100%;font-family:monospace;font-size:11px;">{
+  "torso": { "quaternion": { "x": 0, "y": 0, "z": 0, "w": 1 }, "space": "basis" }
+}</textarea>
+      <div class="row"><button id="btnBatch">批量发送</button></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">接收日志</h2>
+      <div class="log" id="log"></div>
+      <div class="row"><button class="secondary" id="btnClear">清空日志</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log');
+  function log(msg) {
+    const t = new Date().toLocaleTimeString();
+    logEl.textContent += `[${t}] ${msg}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // 默认 WS URL
+  const defaultUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':2001';
+  $('wsUrl').value = defaultUrl;
+
+  let ws = null;
+  const knownJoints = new Set();
+
+  function setStatus(on, text) {
+    $('statusDot').classList.toggle('on', on);
+    $('statusText').textContent = text;
+  }
+
+  function connect() {
+    const url = $('wsUrl').value.trim();
+    if (!url) return;
+    try { ws = new WebSocket(url); } catch (e) { log('连接失败: ' + e); return; }
+    ws.onopen = () => { setStatus(true, '已连接 ' + url); log('已连接 ' + url); };
+    ws.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch { log('收到非JSON: ' + ev.data); return; }
+      if (msg.type === 'welcome') { log('欢迎: ' + JSON.stringify(msg)); return; }
+      if (msg.type === 'snapshot') {
+        log('快照: ' + Object.keys(msg.joints || {}).join(', '));
+        for (const j in (msg.joints || {})) { knownJoints.add(j); renderJoints(); }
+        return;
+      }
+      if (msg.type === 'state') {
+        knownJoints.add(msg.joint); renderJoints();
+        log('state ' + msg.joint + ' q=' + JSON.stringify(msg.quaternion));
+        return;
+      }
+      if (msg.type === 'state_multi') {
+        for (const j in (msg.joints || {})) knownJoints.add(j);
+        renderJoints();
+        log('state_multi: ' + Object.keys(msg.joints || {}).join(', '));
+        return;
+      }
+      if (msg.type === 'joint_list') {
+        (msg.joints || []).forEach(j => knownJoints.add(j));
+        renderJoints();
+        log('关节列表: ' + (msg.joints || []).join(', '));
+        return;
+      }
+      log(JSON.stringify(msg));
+    };
+    ws.onclose = () => { setStatus(false, '已断开'); log('连接关闭'); ws = null; };
+    ws.onerror = (e) => { log('错误'); };
+  }
+
+  function disconnect() { if (ws) ws.close(); }
+
+  function send(obj) {
+    if (!ws || ws.readyState !== 1) { log('未连接，无法发送'); return; }
+    ws.send(JSON.stringify(obj));
+    log('发送: ' + JSON.stringify(obj));
+  }
+
+  function renderJoints() {
+    const el = $('jointList');
+    el.innerHTML = '';
+    [...knownJoints].sort().forEach(j => {
+      const div = document.createElement('div');
+      div.className = 'joint-item' + (j === $('sendJoint').value ? ' active' : '');
+      div.textContent = j;
+      div.onclick = () => { $('sendJoint').value = j; renderJoints(); };
+      el.appendChild(div);
+    });
+  }
+
+  $('btnConnect').onclick = connect;
+  $('btnDisconnect').onclick = disconnect;
+  $('btnSend').onclick = () => {
+    const joint = $('sendJoint').value.trim();
+    const q = { x:+$('qx').value, y:+$('qy').value, z:+$('qz').value, w:+$('qw').value };
+    send({ type: 'set', joint, quaternion: q, space: $('sendSpace').value });
+  };
+  $('btnRest').onclick = () => {
+    $('qx').value = 0; $('qy').value = 0; $('qz').value = 0; $('qw').value = 1;
+    $('btnSend').click();
+  };
+  $('btnList').onclick = () => send({ type: 'list_joints' });
+  $('btnBatch').onclick = () => {
+    let obj;
+    try { obj = JSON.parse($('batchJson').value); } catch (e) { log('JSON 解析失败: ' + e); return; }
+    send({ type: 'set_multi', joints: obj });
+  };
+  $('btnClear').onclick = () => { logEl.textContent = ''; };
+
+  document.querySelectorAll('button[data-joint]').forEach(b => {
+    b.onclick = () => { $('sendJoint').value = b.dataset.joint; renderJoints(); };
+  });
+
+  // 尝试自动连接
+  setTimeout(connect, 300);
+</script>
+</body>
+</html>
