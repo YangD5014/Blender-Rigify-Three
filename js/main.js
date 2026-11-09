@@ -647,6 +647,13 @@ loadingEl.remove();
 window.__app = {
   engine, rigData, boneByName, widgets, camera, controls, modelRoot,
   evaluateAndApply, interaction,
+  getBasisQuat(name) {
+    const m = engine.getBasis(name);
+    if (!m) return null;
+    const v = new Vector3(); const q = new Quaternion(); const sc = new Vector3();
+    m.decompose(v, q, sc);
+    return { x: q.x, y: q.y, z: q.z, w: q.w, tx: v.x, ty: v.y, tz: v.z };
+  },
   resetPose() {
     engine.resetBases();
     evaluateAndApply();
