@@ -153,3 +153,13 @@ tail -f /www/wwwlogs/PetFison_Sensor/err.log
 
 - 3D 查看器（WebSocket 版）：`http://124.222.169.94:2000/blender-3d-operator/index_websocket.html`
 - 控制台：`http://124.222.169.94:2000/PetFusion/Control/`
+
+## HTTPS / WSS
+
+手机 IMU 需要安全上下文（HTTPS）。服务器已启用自签名 HTTPS：
+
+- Web: `https://124.222.169.94:2000/`
+- WebSocket: `wss://124.222.169.94:2001/`
+- 移动端 IMU 页面: `https://124.222.169.94:2000/blender-3d-operator/index_mobile_imu.html`
+
+浏览器可能提示证书不受信任，需手动信任后 IMU 权限才能获取。
