@@ -53,6 +53,32 @@
 </div>
 
 <div class="card">
+  <div class="row"><label>变动范围 (°)</label></div>
+  <div class="row">
+    <label>X</label>
+    <input id="xmin" type="number" value="-40" style="width:70px;">
+    <span>~</span>
+    <input id="xmax" type="number" value="40" style="width:70px;">
+  </div>
+  <div class="row">
+    <label>Y</label>
+    <input id="ymin" type="number" value="-25" style="width:70px;">
+    <span>~</span>
+    <input id="ymax" type="number" value="25" style="width:70px;">
+  </div>
+  <div class="row">
+    <label>Z</label>
+    <input id="zmin" type="number" value="-20" style="width:70px;">
+    <span>~</span>
+    <input id="zmax" type="number" value="20" style="width:70px;">
+  </div>
+  <div class="row">
+    <button id="btnSaveLimits" class="secondary">保存范围</button>
+    <button id="btnLoadLimits" class="secondary">加载范围</button>
+  </div>
+</div>
+
+<div class="card">
   <div class="row">
     <button id="btnPerm">请求传感器权限</button>
     <button id="btnStart" class="secondary">开始推流</button>
@@ -127,6 +153,56 @@
     return true;
   }
 
+
+  const DEFAULT_LIMITS = { x:[-40,40], y:[-25,25], z:[-20,20] };
+  function loadLimits() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('petfusion_joint_limits_' + selectedJoint) || 'null');
+      const L = saved || DEFAULT_LIMITS;
+      $('xmin').value = L.x[0]; $('xmax').value = L.x[1];
+      $('ymin').value = L.y[0]; $('ymax').value = L.y[1];
+      $('zmin').value = L.z[0]; $('zmax').value = L.z[1];
+    } catch {}
+  }
+  function currentLimits() {
+    return {
+      x: [+($('xmin').value), +($('xmax').value)],
+      y: [+($('ymin').value), +($('ymax').value)],
+      z: [+($('zmin').value), +($('zmax').value)],
+    };
+  }
+  function clampQuatByLimits(q, L) {
+    // convert quat -> euler XYZ, clamp, back
+    const eu = quatToEuler(q);
+    const cx = Math.min(Math.max(eu.x, L.x[0]*Math.PI/180), L.x[1]*Math.PI/180);
+    const cy = Math.min(Math.max(eu.y, L.y[0]*Math.PI/180), L.y[1]*Math.PI/180);
+    const cz = Math.min(Math.max(eu.z, L.z[0]*Math.PI/180), L.z[1]*Math.PI/180);
+    return eulerToQuat(cx, cy, cz);
+  }
+  function quatToEuler(q) {
+    // XYZ
+    const sinr = 2*(q.w*q.x + q.y*q.z);
+    const cosr = 1 - 2*(q.x*q.x + q.y*q.y);
+    const x = Math.atan2(sinr, cosr);
+    const sinp = 2*(q.w*q.y - q.z*q.x);
+    const y = Math.abs(sinp) >= 1 ? Math.sign(sinp)*Math.PI/2 : Math.asin(sinp);
+    const siny = 2*(q.w*q.z + q.x*q.y);
+    const cosy = 1 - 2*(q.y*q.y + q.z*q.z);
+    const z = Math.atan2(siny, cosy);
+    return { x, y, z };
+  }
+  function eulerToQuat(x,y,z) {
+    const cx=Math.cos(x/2), sx=Math.sin(x/2);
+    const cy=Math.cos(y/2), sy=Math.sin(y/2);
+    const cz=Math.cos(z/2), sz=Math.sin(z/2);
+    return {
+      w: cx*cy*cz + sx*sy*sz,
+      x: sx*cy*cz - cx*sy*sz,
+      y: cx*sy*cz + sx*cy*sz,
+      z: cx*cy*sz - sx*sy*cz,
+    };
+  }
+
   function handleOrientation(ev) {
     if (!streaming) return;
     const now = Date.now();
@@ -134,7 +210,8 @@
     lastSend = now;
     const alpha = ev.alpha, beta = ev.beta, gamma = ev.gamma;
     $('angles').textContent = `alpha=${(alpha||0).toFixed(1)} beta=${(beta||0).toFixed(1)} gamma=${(gamma||0).toFixed(1)}`;
-    const q = orientationToQuat(alpha, beta, gamma);
+    const q0 = orientationToQuat(alpha, beta, gamma);
+    const q = clampQuatByLimits(q0, currentLimits());
     $('quat').textContent = `q=(${q.x.toFixed(3)},${q.y.toFixed(3)},${q.z.toFixed(3)},${q.w.toFixed(3)})`;
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'set', joint: selectedJoint, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, space: 'basis' }));
@@ -155,6 +232,17 @@
     window.removeEventListener('deviceorientation', handleOrientation);
     $('imuStatus').textContent = 'IMU: 已停止';
   };
+
+  $('btnSaveLimits').onclick = () => {
+    localStorage.setItem('petfusion_joint_limits_' + selectedJoint, JSON.stringify(currentLimits()));
+    $('imuStatus').textContent = '范围已保存: ' + selectedJoint;
+  };
+  $('btnLoadLimits').onclick = () => { loadLimits(); };
+  // load limits when joint changes
+  const origSelChange = $('jointSel').onchange;
+  $('jointSel').addEventListener('change', () => { selectedJoint = $('jointSel').value; loadLimits(); });
+  $('jointCustom').addEventListener('change', () => { /* keep */ });
+  loadLimits();
 
   setTimeout(connect, 500);
 </script>

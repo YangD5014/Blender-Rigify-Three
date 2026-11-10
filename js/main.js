@@ -564,6 +564,20 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 
 // ---------- WebSocket 实时控制 ----------
 // 当页面启用 __WS_ENABLED 时，连接 websocket 并用收到的关节四元数驱动骨骼 basis。
+const __DEFAULT_JOINT_LIMITS = {
+  'torso': { x: [-40, 40], y: [-25, 25], z: [-20, 20] },
+  'neck': { x: [-35, 35], y: [-40, 40], z: [-25, 25] },
+  'head': { x: [-30, 30], y: [-45, 45], z: [-25, 25] },
+  'tail_master.001': { x: [-60, 60], y: [-40, 40], z: [-30, 30] },
+};
+function __loadJointLimits() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('petfusion_joint_limits') || '{}');
+    return Object.assign({}, __DEFAULT_JOINT_LIMITS, saved);
+  } catch { return Object.assign({}, __DEFAULT_JOINT_LIMITS); }
+}
+let __JOINT_LIMITS = __loadJointLimits();
+
 function __wsSetJointBasis(st) {
   if (!st || !st.joint) return;
   const joint = st.joint;
@@ -588,6 +602,15 @@ function __wsSetJointBasis(st) {
     const Pdes = new Matrix4().compose(pp, quat, sc);
     m = new Matrix4().copy(F).invert().multiply(Pdes);
   } else {
+    // 应用关节变动范围限制（欧拉角钳位）
+    const lim = __JOINT_LIMITS[joint];
+    if (lim) {
+      const eu = new Euler().setFromQuaternion(quat, 'XYZ');
+      const cx = Math.min(Math.max(eu.x, (lim.x[0])*Math.PI/180), (lim.x[1])*Math.PI/180);
+      const cy = Math.min(Math.max(eu.y, (lim.y[0])*Math.PI/180), (lim.y[1])*Math.PI/180);
+      const cz = Math.min(Math.max(eu.z, (lim.z[0])*Math.PI/180), (lim.z[1])*Math.PI/180);
+      quat.setFromEuler(new Euler(cx, cy, cz, 'XYZ'));
+    }
     const t = pos || new Vector3();
     const sc = new Vector3(1, 1, 1);
     m = new Matrix4().compose(t, quat, sc);
@@ -621,6 +644,7 @@ if (window.__WS_ENABLED) {
   __wsConnect();
   // 暴露发送接口，便于控制台/外部调用
   window.__wsSend = (obj) => { if (__ws && __ws.readyState === 1) __ws.send(JSON.stringify(obj)); };
+  window.__reloadJointLimits = () => { __JOINT_LIMITS = __loadJointLimits(); };
 }
 
 renderer.setAnimationLoop(() => {
