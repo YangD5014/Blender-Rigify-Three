@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetFusion · 布洛赫球 四元数展示</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0f1a; color: #d4d4d4; font-family: -apple-system, "PingFang SC", sans-serif; }
+  #viewport { position: absolute; inset: 0; }
+  #panel {
+    position: absolute; top: 12px; left: 12px; z-index: 10;
+    background: rgba(20,24,36,0.85); border: 1px solid #2a3045; border-radius: 8px;
+    padding: 12px 14px; width: 260px; backdrop-filter: blur(6px);
+  }
+  h1 { font-size: 14px; color: #7fa7d9; margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  label { color: #aaa; font-size: 12px; width: 70px; }
+  input, select, button { background: #1a1f2e; color: #eee; border: 1px solid #2a3045; border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+  input { flex: 1; }
+  button { cursor: pointer; background: #e87d0d; border: none; color: #fff; }
+  .status { font-size: 12px; color: #aaa; }
+  .status.on { color: #4caf50; }
+  .quat { font-family: monospace; font-size: 12px; color: #9cdcfe; line-height: 1.6; margin-top: 6px; }
+  .hint { color: #666; font-size: 11px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="viewport"></div>
+<div id="panel">
+  <h1>Bloch 球 · 四元数</h1>
+  <div class="row"><span class="status" id="wsStatus">未连接</span></div>
+  <div class="row"><label>WS URL</label><input id="wsUrl" type="text" value=""></div>
+  <div class="row">
+    <label>关节</label>
+    <select id="jointSel">
+      <option value="torso">torso</option>
+      <option value="neck">neck</option>
+      <option value="head">head</option>
+      <option value="tail_master.001">tail_master.001</option>
+    </select>
+  </div>
+  <div class="row">
+    <button id="btnConnect">连接</button>
+    <button id="btnDisconnect" style="background:#3d3d3d;">断开</button>
+  </div>
+  <div class="quat" id="quatText">q = (0,0,0,1)</div>
+  <div class="quat" id="vecText">v = (0,0,1)</div>
+  <div class="hint">布洛赫球展示四元数旋转后的向量方向。</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/gh/YangD5014/Blender-Rigify-Three@main/vendor/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (id) => document.getElementById(id);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f1a);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(3, 2, 3);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.getElementById('viewport').appendChild(renderer.domElement);
+
+// Bloch sphere
+const sphereGeo = new THREE.SphereGeometry(1, 32, 32);
+const sphereMat = new THREE.MeshBasicMaterial({ color: 0x2a3045, wireframe: true, transparent: true, opacity: 0.35 });
+const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+scene.add(sphere);
+
+// axes
+const axes = new THREE.AxesHelper(1.2);
+scene.add(axes);
+
+// vector arrow
+const arrowDir = new THREE.Vector3(0, 0, 1);
+const arrow = new THREE.ArrowHelper(arrowDir, new THREE.Vector3(0,0,0), 1, 0xe87d0d, 0.12, 0.08);
+scene.add(arrow);
+
+// grid circle (equator)
+const circleGeo = new THREE.RingGeometry(0.99, 1.0, 64);
+const circleMat = new THREE.MeshBasicMaterial({ color: 0x444, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+const circle = new THREE.Mesh(circleGeo, circleMat);
+circle.rotation.x = Math.PI/2;
+scene.add(circle);
+
+// lighting not needed (basic materials)
+
+const controls = { dragging: false, prev: {x:0,y:0} };
+let autoRotate = true;
+
+renderer.domElement.addEventListener('pointerdown', (e) => { controls.dragging = true; controls.prev = {x:e.clientX,y:e.clientY}; });
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!controls.dragging) return;
+  const dx = e.clientX - controls.prev.x;
+  const dy = e.clientY - controls.prev.y;
+  sphere.rotation.y += dx * 0.01;
+  sphere.rotation.x += dy * 0.01;
+  arrow.rotation.copy(sphere.rotation); // keep arrow? we'll handle separately
+  controls.prev = {x:e.clientX,y:e.clientY};
+  autoRotate = false;
+});
+renderer.domElement.addEventListener('pointerup', () => { controls.dragging = false; });
+
+// We'll keep sphere fixed orientation for reference; rotate camera instead? Simpler: rotate whole scene group.
+const group = new THREE.Group();
+// move objects into group
+scene.remove(sphere, axes, arrow, circle);
+group.add(sphere, axes, arrow, circle);
+scene.add(group);
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!controls.dragging) return;
+  const dx = e.clientX - controls.prev.x;
+  const dy = e.clientY - controls.prev.y;
+  group.rotation.y += dx * 0.01;
+  group.rotation.x += dy * 0.01;
+  controls.prev = {x:e.clientX,y:e.clientY};
+  autoRotate = false;
+});
+
+// websocket
+const defaultUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':2001';
+$('wsUrl').value = defaultUrl;
+let ws = null;
+let selectedJoint = $('jointSel').value;
+$('jointSel').onchange = () => { selectedJoint = $('jointSel').value; };
+
+function setStatus(text, on) {
+  const el = $('wsStatus');
+  el.textContent = text;
+  el.classList.toggle('on', !!on);
+}
+
+function connect() {
+  const url = $('wsUrl').value.trim();
+  try { ws = new WebSocket(url); } catch (e) { setStatus('失败', false); return; }
+  ws.onopen = () => setStatus('已连接', true);
+  ws.onclose = () => setStatus('已断开', false);
+  ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === 'state' && msg.joint === selectedJoint) {
+      updateQuat(msg.quaternion);
+    } else if (msg.type === 'state_multi' && msg.joints && msg.joints[selectedJoint]) {
+      updateQuat(msg.joints[selectedJoint].quaternion);
+    } else if (msg.type === 'snapshot' && msg.joints && msg.joints[selectedJoint]) {
+      updateQuat(msg.joints[selectedJoint].quaternion);
+    }
+  };
+}
+function disconnect() { if (ws) ws.close(); ws = null; }
+$('btnConnect').onclick = connect;
+$('btnDisconnect').onclick = disconnect;
+
+function updateQuat(q) {
+  if (!q) return;
+  const x = +q.x, y = +q.y, z = +q.z, w = (q.w !== undefined ? +q.w : 1);
+  $('quatText').textContent = `q = (${x.toFixed(4)}, ${y.toFixed(4)}, ${z.toFixed(4)}, ${w.toFixed(4)})`;
+  const v = new THREE.Vector3(0, 0, 1).applyQuaternion(new THREE.Quaternion(x, y, z, w));
+  $('vecText').textContent = `v = (${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`;
+  arrow.setDirection(v.clone().normalize());
+}
+
+// render loop
+renderer.setAnimationLoop(() => {
+  if (autoRotate) group.rotation.y += 0.003;
+  renderer.render(scene, camera);
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+setTimeout(connect, 500);
+</script>
+</body>
+</html>
