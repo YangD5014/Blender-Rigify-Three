@@ -116,7 +116,7 @@ renderer.domElement.addEventListener('pointerup', () => { controls.dragging = fa
 const group = new THREE.Group();
 // move objects into group
 scene.remove(sphere, axes, arrow, circle);
-group.add(sphere, axes, arrow, circle);
+group.add(sphere, axes, arrow, circle, solid);
 scene.add(group);
 
 renderer.domElement.addEventListener('pointermove', (e) => {
